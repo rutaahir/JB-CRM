@@ -17,6 +17,7 @@ import {
   CreditCard,
   CheckCircle2,
   BookOpen,
+  Receipt,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { dealsApi, BrokerageLedgerResponse } from '@/api/deals';
