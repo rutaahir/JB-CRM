@@ -39,11 +39,15 @@ router.register(r'payments', PaymentReceiptViewSet, basename='payment')
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # Auth endpoints
+    # Auth endpoints (supports both /api/auth/ and /auth/)
     path('api/auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/me/', CurrentUserView.as_view(), name='current_user'),
     path('api/auth/logout/', LogoutView.as_view(), name='logout'),
+    path('auth/login/', CustomTokenObtainPairView.as_view()),
+    path('auth/refresh/', CustomTokenRefreshView.as_view()),
+    path('auth/me/', CurrentUserView.as_view()),
+    path('auth/logout/', LogoutView.as_view()),
 
     # Dashboard endpoint
     path('api/dashboard/stats/', DashboardStatsView.as_view(), name='dashboard_stats'),
