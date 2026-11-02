@@ -51,6 +51,7 @@ urlpatterns = [
 
     # Dashboard endpoint
     path('api/dashboard/stats/', DashboardStatsView.as_view(), name='dashboard_stats'),
+    path('dashboard/stats/', DashboardStatsView.as_view()),
 
     # Statements & PDF Extractor endpoints
     path('api/statements/upload/', UploadAndExtractStatementView.as_view(), name='statement_upload'),
@@ -58,9 +59,15 @@ urlpatterns = [
     path('api/statements/<int:pk>/rollback/', RollbackStatementView.as_view(), name='statement_rollback'),
     path('api/statements/aliases/', PartyAliasView.as_view(), name='statement_aliases'),
     path('api/statements/', StatementListView.as_view(), name='statement_list'),
+    path('statements/upload/', UploadAndExtractStatementView.as_view()),
+    path('statements/save-verified/<int:pk>/', SaveVerifiedRecordsView.as_view()),
+    path('statements/<int:pk>/rollback/', RollbackStatementView.as_view()),
+    path('statements/aliases/', PartyAliasView.as_view()),
+    path('statements/', StatementListView.as_view()),
 
-    # API resources
+    # API resources (both /api/ and root)
     path('api/', include(router.urls)),
+    path('', include(router.urls)),
 
     # Spectacular API docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
