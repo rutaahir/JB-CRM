@@ -48,15 +48,15 @@ export interface Category {
 export interface Product {
   id: number;
   name: string;
-  category: number;
+  category?: number | null;
   category_name?: string;
-  brand: string;
-  description: string;
-  image: string | null;
+  brand?: string;
+  description?: string;
+  image?: string | null;
   price: string | number | null;
   price_unit: string;
   packaging: string;
-  protein_percent: string | number | null;
+  protein_percent?: string | number | null;
   seller: number | null;
   seller_name?: string | null;
   is_active: boolean;
@@ -137,13 +137,18 @@ export interface Deal {
   id: number;
   deal_number: string;
   date: string;
-  seller: number | null;
+  seller?: number | null;
   seller_name: string;
-  buyer: number | null;
+  company_contact?: number | null;
+  company_contact_name?: string;
+  buyer?: number | null;
   buyer_name: string;
   buyer_city: string;
+  buyer_contact?: number | null;
+  buyer_contact_name?: string;
   product: number | null;
   product_name: string;
+  product_name_display?: string;
   packaging: string;
   quantity: number;
   rate: string | number;
@@ -156,6 +161,23 @@ export interface Deal {
   brokerage_received: string | number;
   brokerage_status: 'UNPAID' | 'PARTIAL' | 'PAID';
   brokerage_payments?: BrokeragePayment[];
+  quantity_unit?: 'BAG' | 'મણ' | string;
+  delivery_payment_status?: 'Pending' | 'Done' | string;
+  delivery_status?: 'Pending' | 'Dispatched' | 'Delivered' | 'Completed' | 'Cancelled' | string;
+  payment_status?: 'Pending' | 'Partial' | 'Paid' | string;
+  is_test?: boolean;
+  mill_order_number?: string;
+  whatsapp_message_mill?: string;
+  whatsapp_message_buyer?: string;
+  side_effects?: {
+    mill_order_number?: string;
+    new_product_alert?: boolean;
+    alert_message?: string;
+    target_actual?: number;
+    target_goal?: number;
+    whatsapp_message_mill?: string;
+    whatsapp_message_buyer?: string;
+  };
   statement?: number | null;
   status: 'BOOKED' | 'DISPATCHED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED';
   delivery_terms: string;
@@ -275,3 +297,127 @@ export interface PartyAlias {
   buyer_name?: string;
   created_at: string;
 }
+
+export type PartyType = 'BUYER' | 'COMPANY_MILL';
+
+export interface Contact {
+  id: number;
+  code: string;
+  date: string;
+  name: string;
+  party_type: PartyType;
+  contact_person_1: string;
+  contact_person_2: string;
+  mobile_1: string;
+  mobile_2: string;
+  phone_office_1: string;
+  phone_office_2: string;
+  address: string;
+  area: string;
+  city: string;
+  pin_code: string;
+  gst_no: string;
+  pan_no: string;
+  aadhar_no: string;
+  email: string;
+  reference_by: string;
+  is_active: boolean;
+  is_placeholder_mobile?: boolean;
+  has_deals?: boolean;
+  duplicate_warning?: {
+    message: string;
+    existing_id: number;
+    existing_name: string;
+    existing_code: string;
+  } | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PendingOrderExtractedRow {
+  row_id: number;
+  date: string;
+  party_name: string;
+  city: string;
+  broker: string;
+  product: string;
+  product_id?: number | null;
+  total_bag: number;
+  rate: number;
+  dispatch_bag: number;
+  pending_bag: number;
+  days_pending: number;
+  status: 'Pending' | 'Dispatch Due' | 'Completed';
+  contact_id?: number | null;
+  contact_code?: string;
+  contact_name?: string;
+  is_new_party: boolean;
+  match_confidence: number;
+  comparison_status: 'NEW_ORDER' | 'PARTIALLY_DISPATCHED' | 'COMPLETED' | 'UNCHANGED' | 'PENDING';
+  comparison_notes: string;
+}
+
+export interface PendingOrderSummary {
+  total_orders: number;
+  total_pending_bags: number;
+  total_dispatched_bags: number;
+  total_order_bags: number;
+  matched_parties_count: number;
+  new_parties_count: number;
+  aging: {
+    less_15_days: number;
+    between_15_30_days: number;
+    over_30_days: number;
+  };
+  comparison: PendingOrderComparison;
+}
+
+export interface PendingOrderComparison {
+  has_previous_comparison: boolean;
+  previous_statement_id?: number | null;
+  previous_statement_date?: string | null;
+  new_orders_count: number;
+  completed_orders_count: number;
+  partially_dispatched_count: number;
+  unchanged_orders_count: number;
+  completed_removed_orders?: PendingOrderExtractedRow[];
+}
+
+export interface PendingOrderReport {
+  id: number;
+  filename: string;
+  company_name: string;
+  company_contact_id?: number | null;
+  report_date: string;
+  status: string;
+  uploaded_at: string;
+  records?: PendingOrderExtractedRow[];
+  summary?: PendingOrderSummary;
+  comparison?: PendingOrderComparison;
+}
+
+export interface PendingOrderRecord {
+  id: number;
+  deal?: number | null;
+  company_contact?: number | null;
+  company_name: string;
+  buyer_contact?: number | null;
+  buyer_name?: string;
+  party_name: string;
+  city: string;
+  product?: number | null;
+  product_name: string;
+  broker: string;
+  order_date: string;
+  rate: string | number;
+  rate_unit: string;
+  order_quantity: number;
+  dispatch_quantity: number;
+  pending_quantity: number;
+  quantity_unit: string;
+  status: 'Pending' | 'Dispatch Due' | 'Completed';
+  days_pending?: number;
+  created_at: string;
+}
+
+

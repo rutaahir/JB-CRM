@@ -5,14 +5,11 @@ import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AppLayout } from '@/layouts/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
 import { DashboardPage } from '@/pages/DashboardPage';
-import { SellersPage } from '@/pages/SellersPage';
-import { BuyersPage } from '@/pages/BuyersPage';
-import { ProductsPage } from '@/pages/ProductsPage';
+import { ContactViewPage } from '@/pages/ContactViewPage';
+import { ContactMasterPage } from '@/pages/ContactMasterPage';
 import { StaffPage } from '@/pages/StaffPage';
-import { ProfilePage } from '@/pages/ProfilePage';
 import { DealsPage } from '@/pages/DealsPage';
-import { StatementsPage } from '@/pages/StatementsPage';
-import { RecoveriesPage } from '@/pages/RecoveriesPage';
+import { PendingOrdersPage } from '@/pages/PendingOrdersPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -79,9 +76,18 @@ export const App: React.FC = () => {
             >
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
-              <Route path="sellers" element={<SellersPage />} />
-              <Route path="buyers" element={<BuyersPage />} />
-              <Route path="products" element={<ProductsPage />} />
+
+              {/* Contact Master & View */}
+              <Route path="contacts/view" element={<ContactViewPage />} />
+              <Route path="contacts/master" element={<ContactMasterPage />} />
+
+              {/* Sauda Deals (Entry F6 & Register F7) */}
+              <Route path="deals" element={<DealsPage />} />
+
+              {/* Pending Orders & PDF Extractor (Module 4) */}
+              <Route path="pending-orders" element={<PendingOrdersPage />} />
+
+              {/* Staff Management (Module 11) */}
               <Route
                 path="staff"
                 element={
@@ -90,10 +96,6 @@ export const App: React.FC = () => {
                   </AdminRoute>
                 }
               />
-              <Route path="deals" element={<DealsPage />} />
-              <Route path="statements" element={<StatementsPage />} />
-              <Route path="recoveries" element={<RecoveriesPage />} />
-              <Route path="profile" element={<ProfilePage />} />
             </Route>
 
             {/* Catch-all redirect */}

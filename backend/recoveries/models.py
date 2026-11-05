@@ -13,13 +13,15 @@ class RecoveryRecord(models.Model):
     ]
 
     deal = models.ForeignKey(Deal, on_delete=models.SET_NULL, null=True, blank=True, related_name='recoveries', verbose_name="Linked Sauda Deal")
-    seller = models.ForeignKey(Seller, on_delete=models.CASCADE, related_name='recoveries', null=True, blank=True, verbose_name="Seller / Mill")
+    seller = models.ForeignKey(Seller, on_delete=models.SET_NULL, null=True, blank=True, related_name='recoveries', verbose_name="Seller / Mill")
     seller_name = models.CharField(max_length=255, verbose_name="Seller Company Name")
+    company_contact = models.ForeignKey('contacts.Contact', on_delete=models.SET_NULL, null=True, blank=True, related_name='company_recoveries', verbose_name="Company / Mill (Party ID)")
 
     buyer = models.ForeignKey(Buyer, on_delete=models.SET_NULL, null=True, blank=True, related_name='recoveries', verbose_name="Buyer / Party")
     buyer_name = models.CharField(max_length=255, verbose_name="Buyer Party Name")
     buyer_city = models.CharField(max_length=150, blank=True, default='', verbose_name="Buyer City")
     buyer_phone = models.CharField(max_length=30, blank=True, default='', verbose_name="Buyer Phone")
+    buyer_contact = models.ForeignKey('contacts.Contact', on_delete=models.SET_NULL, null=True, blank=True, related_name='buyer_recoveries', verbose_name="Buyer (Party ID)")
 
     bill_number = models.CharField(max_length=100, verbose_name="Bill / Invoice Number")
     bill_date = models.DateField(default=timezone.now, verbose_name="Bill Date")
@@ -61,9 +63,19 @@ class RecoveryRecord(models.Model):
         return self.overdue_days >= effective_due_days and self.balance_amount > Decimal('0.00')
 
     def save(self, *args, **kwargs):
-        if self.seller and not self.seller_name:
+        if self.company_contact and not self.seller_name:
+            self.seller_name = self.company_contact.name
+        elif self.seller and not self.seller_name:
             self.seller_name = self.seller.company_name
-        if self.buyer:
+
+        if self.buyer_contact:
+            if not self.buyer_name:
+                self.buyer_name = self.buyer_contact.name
+            if not self.buyer_phone:
+                self.buyer_phone = self.buyer_contact.mobile_1 or self.buyer_contact.phone_office_1
+            if not self.buyer_city and self.buyer_contact.city:
+                self.buyer_city = self.buyer_contact.city
+        elif self.buyer:
             if not self.buyer_name:
                 self.buyer_name = self.buyer.company_name
             if not self.buyer_phone:

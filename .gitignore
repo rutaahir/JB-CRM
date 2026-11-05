@@ -1,12 +1,15 @@
 # Python & Django
 backend/venv/
 backend/.env
-backend/db.sqlite3
+backend/db.sqlite3*
 backend/staticfiles/
 __pycache__/
 *.py[cod]
 *$py.class
-*.sqlite3
+*.sqlite3*
+*.backup*
+*.bak
+backend/media/statements/
 
 # Node & Frontend
 frontend/node_modules/

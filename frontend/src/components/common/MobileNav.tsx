@@ -1,19 +1,14 @@
-import React, { useState } from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import React from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
-  Database,
   Handshake,
   FileSpreadsheet,
-  IndianRupee,
   Building2,
   Users2,
-  Package,
-  ShieldCheck,
-  User,
+  Clock,
   LogOut,
   X,
-  ChevronDown,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { useAuth } from '@/context/AuthContext';
@@ -25,22 +20,8 @@ interface MobileNavProps {
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
-  const { user, isAdmin, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const location = useLocation();
-
-  const masterSubItems = [
-    { label: 'Sellers', path: '/sellers', icon: Building2 },
-    { label: 'Buyers', path: '/buyers', icon: Users2 },
-    { label: 'Products', path: '/products', icon: Package },
-    ...(isAdmin ? [{ label: 'Staff', path: '/staff', icon: ShieldCheck }] : []),
-  ];
-
-  const isMasterActive = masterSubItems.some((item) =>
-    location.pathname.startsWith(item.path)
-  );
-
-  const [isMasterOpen, setIsMasterOpen] = useState(true);
 
   return (
     <>
@@ -56,7 +37,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
                 <BrandLogo size="md" />
                 <button
                   onClick={onClose}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white"
+                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
                 >
                   <X size={20} />
                 </button>
@@ -73,9 +54,9 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
                 </div>
               </div>
 
-              {/* Nav Links */}
-              <nav className="space-y-1">
-                {/* Dashboard */}
+              {/* Nav Links: Dashboard, Contact View, Contact Master, Sauda Entry, Sauda Register */}
+              <nav className="space-y-1.5">
+                {/* 0. Dashboard */}
                 <NavLink
                   to="/dashboard"
                   onClick={onClose}
@@ -92,109 +73,116 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
                   <span>Dashboard</span>
                 </NavLink>
 
-                {/* Master Section */}
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setIsMasterOpen(!isMasterOpen)}
-                    className={cn(
-                      'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer',
-                      isMasterActive
-                        ? 'bg-[#0e4326] text-white font-semibold'
+                {/* 1. Contact View */}
+                <NavLink
+                  to="/contacts/view"
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-[#10482b] text-white font-semibold'
                         : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Database size={18} className="text-amber-400" />
-                      <span>Master</span>
-                    </div>
-                    <ChevronDown
-                      size={15}
+                    )
+                  }
+                >
+                  <Users2 size={18} className="text-amber-400" />
+                  <span>Contact View</span>
+                </NavLink>
+
+                {/* 2. Contact Master (F8) */}
+                <NavLink
+                  to="/contacts/master"
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-[#10482b] text-white font-semibold'
+                        : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
+                    )
+                  }
+                >
+                  <div className="flex items-center gap-3">
+                    <Building2 size={18} className="text-amber-400" />
+                    <span>Contact Master</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/30 text-amber-300 font-semibold">
+                    F8
+                  </span>
+                </NavLink>
+
+                {/* 3. Sauda Entry (F6) */}
+                {(() => {
+                  const isEntry = location.pathname === '/deals' && new URLSearchParams(location.search).get('mode') === 'entry';
+                  return (
+                    <NavLink
+                      to="/deals?mode=entry"
+                      onClick={onClose}
                       className={cn(
-                        'text-slate-400 transition-transform duration-200',
-                        isMasterOpen ? 'rotate-180 text-amber-400' : ''
+                        'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                        isEntry
+                          ? 'bg-[#10482b] text-white font-semibold'
+                          : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
                       )}
-                    />
-                  </button>
+                    >
+                      <div className="flex items-center gap-3">
+                        <Handshake size={18} className={isEntry ? 'text-amber-400' : 'text-slate-400'} />
+                        <span>Sauda Entry</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/30 text-amber-300 font-semibold">
+                        F6
+                      </span>
+                    </NavLink>
+                  );
+                })()}
 
-                  {isMasterOpen && (
-                    <div className="mt-1 space-y-1 pl-4 ml-4 border-l border-[#125833]/80">
-                      {masterSubItems.map((subItem) => {
-                        const SubIcon = subItem.icon;
-                        return (
-                          <NavLink
-                            key={subItem.path}
-                            to={subItem.path}
-                            onClick={onClose}
-                            className={({ isActive }) =>
-                              cn(
-                                'flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
-                                isActive
-                                  ? 'bg-[#14532D] text-white font-bold'
-                                  : 'text-slate-300 hover:text-white hover:bg-[#0c3d24]'
-                              )
-                            }
-                          >
-                            <SubIcon size={15} className="text-amber-400" />
-                            <span>{subItem.label}</span>
-                          </NavLink>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                  {/* Deals / Sauda Booking */}
-                  <NavLink
-                    to="/deals"
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
-                        isActive
-                          ? 'bg-[#104e2d] text-white font-semibold'
+                {/* 4. Sauda Register (F7) */}
+                {(() => {
+                  const isRegister = location.pathname === '/deals' && new URLSearchParams(location.search).get('mode') !== 'entry';
+                  return (
+                    <NavLink
+                      to="/deals?mode=register"
+                      onClick={onClose}
+                      className={cn(
+                        'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                        isRegister
+                          ? 'bg-[#10482b] text-white font-semibold'
                           : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
-                      )
-                    }
-                  >
-                    <Handshake size={18} className="text-amber-400" />
-                    <span>Deals / Sauda</span>
-                  </NavLink>
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <FileSpreadsheet size={18} className={isRegister ? 'text-amber-400' : 'text-slate-400'} />
+                        <span>Sauda Register</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/30 text-amber-300 font-semibold">
+                        F7
+                      </span>
+                    </NavLink>
+                  );
+                })()}
 
-                  {/* PDF Statements */}
-                  <NavLink
-                    to="/statements"
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
-                        isActive
-                          ? 'bg-[#104e2d] text-white font-semibold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
-                      )
-                    }
-                  >
-                    <FileSpreadsheet size={18} className="text-amber-400" />
-                    <span>PDF Statements</span>
-                  </NavLink>
-
-                  {/* Recovery Ledger */}
-                  <NavLink
-                    to="/recoveries"
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
-                        isActive
-                          ? 'bg-[#104e2d] text-white font-semibold'
-                          : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
-                      )
-                    }
-                  >
-                    <IndianRupee size={18} className="text-amber-400" />
-                    <span>Recovery Ledger</span>
-                  </NavLink>
-
+                {/* 5. Pending Orders & PDF Extractor (Module 4) */}
+                <NavLink
+                  to="/pending-orders"
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-[#10482b] text-white font-semibold'
+                        : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
+                    )
+                  }
+                >
+                  <div className="flex items-center gap-3">
+                    <Clock size={18} className="text-amber-400" />
+                    <span>Pending Orders</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-semibold">
+                    PDF
+                  </span>
+                </NavLink>
               </nav>
             </div>
 
@@ -203,22 +191,12 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
               <button
                 onClick={() => {
                   onClose();
-                  navigate('/profile');
-                }}
-                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm text-slate-300 hover:text-white hover:bg-[#0b3820]"
-              >
-                <User size={18} />
-                <span>Profile Settings</span>
-              </button>
-              <button
-                onClick={() => {
-                  onClose();
                   logout();
                 }}
-                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm text-rose-300 hover:text-rose-200 hover:bg-rose-950/40"
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm text-rose-300 hover:text-rose-200 hover:bg-rose-950/40 cursor-pointer"
               >
                 <LogOut size={18} />
-                <span>Sign Out</span>
+                <span>Logout</span>
               </button>
             </div>
           </div>
@@ -246,24 +224,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
           </NavLink>
 
           <NavLink
-            to="/sellers"
-            className={({ isActive }) =>
-              cn(
-                'flex flex-col items-center py-1.5 px-3 rounded-lg text-[10px] font-medium transition-colors',
-                isActive ? 'text-forest-900 font-bold' : 'text-slate-500 hover:text-slate-800'
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Building2 size={18} className={cn(isActive ? 'text-forest-800 stroke-[2.5]' : 'text-slate-500')} />
-                <span className="mt-1">Sellers</span>
-              </>
-            )}
-          </NavLink>
-
-          <NavLink
-            to="/buyers"
+            to="/contacts/view"
             className={({ isActive }) =>
               cn(
                 'flex flex-col items-center py-1.5 px-3 rounded-lg text-[10px] font-medium transition-colors',
@@ -274,13 +235,13 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
             {({ isActive }) => (
               <>
                 <Users2 size={18} className={cn(isActive ? 'text-forest-800 stroke-[2.5]' : 'text-slate-500')} />
-                <span className="mt-1">Buyers</span>
+                <span className="mt-1">Contact View</span>
               </>
             )}
           </NavLink>
 
           <NavLink
-            to="/products"
+            to="/contacts/master"
             className={({ isActive }) =>
               cn(
                 'flex flex-col items-center py-1.5 px-3 rounded-lg text-[10px] font-medium transition-colors',
@@ -290,32 +251,48 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
           >
             {({ isActive }) => (
               <>
-                <Package size={18} className={cn(isActive ? 'text-forest-800 stroke-[2.5]' : 'text-slate-500')} />
-                <span className="mt-1">Products</span>
+                <Building2 size={18} className={cn(isActive ? 'text-forest-800 stroke-[2.5]' : 'text-slate-500')} />
+                <span className="mt-1">Contact Master</span>
               </>
             )}
           </NavLink>
 
-          {isAdmin && (
-            <NavLink
-              to="/staff"
-              className={({ isActive }) =>
-                cn(
-                  'flex flex-col items-center py-1.5 px-3 rounded-lg text-[10px] font-medium transition-colors',
-                  isActive ? 'text-forest-900 font-bold' : 'text-slate-500 hover:text-slate-800'
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <ShieldCheck size={18} className={cn(isActive ? 'text-forest-800 stroke-[2.5]' : 'text-slate-500')} />
-                  <span className="mt-1">Staff</span>
-                </>
-              )}
-            </NavLink>
-          )}
+          <NavLink
+            to="/deals?mode=entry"
+            className={({ isActive }) =>
+              cn(
+                'flex flex-col items-center py-1.5 px-3 rounded-lg text-[10px] font-medium transition-colors',
+                location.pathname === '/deals' && location.search.includes('entry') ? 'text-forest-900 font-bold' : 'text-slate-500 hover:text-slate-800'
+              )
+            }
+          >
+            {() => (
+              <>
+                <Handshake size={18} className={cn(location.pathname === '/deals' && location.search.includes('entry') ? 'text-forest-800 stroke-[2.5]' : 'text-slate-500')} />
+                <span className="mt-1">Sauda Entry</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/deals"
+            className={({ isActive }) =>
+              cn(
+                'flex flex-col items-center py-1.5 px-3 rounded-lg text-[10px] font-medium transition-colors',
+                isActive && !location.search.includes('entry') ? 'text-forest-900 font-bold' : 'text-slate-500 hover:text-slate-800'
+              )
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <FileSpreadsheet size={18} className={cn(isActive && !location.search.includes('entry') ? 'text-forest-800 stroke-[2.5]' : 'text-slate-500')} />
+                <span className="mt-1">Sauda Register</span>
+              </>
+            )}
+          </NavLink>
         </div>
       </div>
     </>
   );
 };
+export default MobileNav;

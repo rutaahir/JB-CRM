@@ -31,8 +31,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/sellers?search=${encodeURIComponent(searchQuery.trim())}`);
+    const q = searchQuery.trim();
+    if (!q) return;
+    if (q.toUpperCase().startsWith('SD-') || q.toUpperCase().startsWith('MO-') || q.toLowerCase().includes('sauda') || q.toLowerCase().includes('deal')) {
+      navigate(`/deals?mode=register&search=${encodeURIComponent(q)}`);
+    } else {
+      navigate(`/contacts/view?search=${encodeURIComponent(q)}`);
     }
   };
 
@@ -51,14 +55,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
         <span className="font-heading font-bold text-forest-900 text-lg">Jalaram Brokers</span>
       </div>
 
-      {/* Global Search Bar (Unobstructed, matches screenshot) */}
+      {/* Global Search Bar (Contacts & Deals only) */}
       <form onSubmit={handleSearchSubmit} className="hidden sm:flex flex-1 max-w-md items-center relative">
         <Search size={18} className="absolute left-3.5 text-slate-400 pointer-events-none" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search sellers, buyers, products..."
+          placeholder="Search contacts, deals..."
           className="w-full pl-10 pr-4 py-2 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200/80 rounded-xl text-sm placeholder:text-slate-400 text-slate-800 focus:outline-none focus:ring-2 focus:ring-forest-800/15 focus:border-forest-700 transition-all shadow-inner"
         />
       </form>
@@ -127,16 +131,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
                   {user?.role}
                 </span>
               </div>
-              <button
-                onClick={() => {
-                  setDropdownOpen(false);
-                  navigate('/profile');
-                }}
-                className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors cursor-pointer"
-              >
-                <UserIcon size={16} className="text-slate-400" />
-                Profile Settings
-              </button>
               <button
                 onClick={() => {
                   setDropdownOpen(false);

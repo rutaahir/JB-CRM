@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal } from '@/components/common/Modal';
 import { Product } from '@/types';
 import { formatPrice, formatDate } from '@/lib/utils';
-import { Package, Tag, Building, Percent, Layers } from 'lucide-react';
+import { Package, Building, Layers } from 'lucide-react';
 
 interface ProductViewModalProps {
   isOpen: boolean;
@@ -22,21 +22,10 @@ export const ProductViewModal: React.FC<ProductViewModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={product.name}
-      subtitle="Product Details & Specifications"
-      maxWidth="lg"
+      subtitle="પ્રોડક્ટ વિગત (Product Details)"
+      maxWidth="md"
     >
-      <div className="space-y-6">
-        {/* Product Image Banner */}
-        <div className="aspect-[16/9] w-full bg-slate-100 rounded-2xl overflow-hidden border border-slate-200">
-          {product.image ? (
-            <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-300">
-              <Package size={48} />
-            </div>
-          )}
-        </div>
-
+      <div className="space-y-4">
         {/* Pricing & Status Highlight */}
         <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex items-center justify-between">
           <div>
@@ -57,35 +46,17 @@ export const ProductViewModal: React.FC<ProductViewModalProps> = ({
         {/* Specifications Grid */}
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
-            <Tag size={18} className="text-slate-400 shrink-0" />
-            <div>
-              <p className="text-xs text-slate-400 uppercase font-semibold">Category</p>
-              <p className="font-semibold text-slate-800">{product.category_name}</p>
-            </div>
-          </div>
-
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
             <Layers size={18} className="text-slate-400 shrink-0" />
             <div>
               <p className="text-xs text-slate-400 uppercase font-semibold">Packaging</p>
-              <p className="font-semibold text-slate-800">{product.packaging || 'Standard'}</p>
-            </div>
-          </div>
-
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
-            <Percent size={18} className="text-slate-400 shrink-0" />
-            <div>
-              <p className="text-xs text-slate-400 uppercase font-semibold">Protein %</p>
-              <p className="font-semibold text-slate-800">
-                {product.protein_percent ? `${product.protein_percent}%` : 'Standard'}
-              </p>
+              <p className="font-semibold text-slate-800">{product.packaging || 'Standard 50 kg'}</p>
             </div>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
             <Building size={18} className="text-slate-400 shrink-0" />
             <div>
-              <p className="text-xs text-slate-400 uppercase font-semibold">Supplier / Seller</p>
+              <p className="text-xs text-slate-400 uppercase font-semibold">Mill / Supplier</p>
               <p className="font-semibold text-slate-800 truncate max-w-[140px]">
                 {product.seller_name || 'Open / Multi'}
               </p>
@@ -96,7 +67,7 @@ export const ProductViewModal: React.FC<ProductViewModalProps> = ({
         {/* Description */}
         {product.description && (
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-sm">
-            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Description</p>
+            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Description / વિગત</p>
             <p className="text-slate-700 leading-relaxed">{product.description}</p>
           </div>
         )}
@@ -105,7 +76,7 @@ export const ProductViewModal: React.FC<ProductViewModalProps> = ({
           <span>Added: {formatDate(product.created_at)}</span>
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+            className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
           >
             Close
           </button>
@@ -114,4 +85,3 @@ export const ProductViewModal: React.FC<ProductViewModalProps> = ({
     </Modal>
   );
 };
-

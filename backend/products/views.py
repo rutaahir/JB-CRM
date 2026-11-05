@@ -23,11 +23,12 @@ class ProductViewSet(viewsets.ModelViewSet):
     CRUD API for Products.
     Admins have full CRUD, staff users have read-only access.
     """
-    queryset = Product.objects.select_related('category', 'seller').all().order_by('-created_at')
+    queryset = Product.objects.all().order_by('name')
     serializer_class = ProductSerializer
     permission_classes = [IsAdminOrReadOnlyStaff]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['category', 'is_active', 'seller']
-    search_fields = ['name', 'brand', 'description', 'category__name']
-    ordering_fields = ['name', 'price', 'created_at']
-    ordering = ['-created_at']
+    filterset_fields = ['is_active']
+    search_fields = ['name']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
+    pagination_class = None

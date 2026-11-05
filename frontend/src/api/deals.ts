@@ -84,4 +84,19 @@ export const dealsApi = {
   deleteDeal: async (id: number) => {
     await apiClient.delete(`/deals/${id}/`);
   },
+
+  exportExcel: (params?: Record<string, any>) => {
+    const query = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          query.append(k, String(v));
+        }
+      });
+    }
+    const token = localStorage.getItem('access_token');
+    // Direct link trigger or fetch with auth header
+    const url = `/api/deals/export_excel/?${query.toString()}`;
+    window.open(url, '_blank');
+  },
 };

@@ -12,11 +12,18 @@ from accounts.views import (
     LogoutView,
     StaffViewSet,
 )
+from contacts.views import ContactViewSet
 from sellers.views import SellerViewSet
 from buyers.views import BuyerViewSet
-from products.views import CategoryViewSet, ProductViewSet
+from products.views import ProductViewSet
 from dashboard.views import DashboardStatsView
-from deals.views import DealViewSet
+from deals.views import (
+    DealViewSet,
+    MillOrderViewSet,
+    PendingOrderViewSet,
+    PartyProductMappingViewSet,
+    PartyProductTargetViewSet,
+)
 from recoveries.views import RecoveryRecordViewSet, PaymentReceiptViewSet
 from statements.views import (
     UploadAndExtractStatementView,
@@ -24,15 +31,23 @@ from statements.views import (
     StatementListView,
     RollbackStatementView,
     PartyAliasView,
+    UploadAndExtractPendingOrderView,
+    ApprovePendingOrderReportView,
+    QuickAddContactFromStatementView,
+    PendingOrderReportDetailView,
 )
 
 router = DefaultRouter()
+router.register(r'contacts', ContactViewSet, basename='contact')
 router.register(r'sellers', SellerViewSet, basename='seller')
 router.register(r'buyers', BuyerViewSet, basename='buyer')
-router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'staff', StaffViewSet, basename='staff')
 router.register(r'deals', DealViewSet, basename='deal')
+router.register(r'mill-orders', MillOrderViewSet, basename='mill-order')
+router.register(r'pending-orders', PendingOrderViewSet, basename='pending-order')
+router.register(r'party-mappings', PartyProductMappingViewSet, basename='party-mapping')
+router.register(r'party-targets', PartyProductTargetViewSet, basename='party-target')
 router.register(r'recoveries', RecoveryRecordViewSet, basename='recovery')
 router.register(r'payments', PaymentReceiptViewSet, basename='payment')
 
@@ -64,6 +79,18 @@ urlpatterns = [
     path('statements/<int:pk>/rollback/', RollbackStatementView.as_view()),
     path('statements/aliases/', PartyAliasView.as_view()),
     path('statements/', StatementListView.as_view()),
+
+    # Company-wise Pending Order PDF System (Module 4)
+    path('api/pending-orders/upload-pdf/', UploadAndExtractPendingOrderView.as_view(), name='pending_order_upload_pdf'),
+    path('api/pending-orders/approve/<int:pk>/', ApprovePendingOrderReportView.as_view(), name='pending_order_approve'),
+    path('api/pending-orders/quick-add-contact/', QuickAddContactFromStatementView.as_view(), name='pending_order_quick_add_contact'),
+    path('api/pending-orders/reports/', StatementListView.as_view(), name='pending_order_reports'),
+    path('api/pending-orders/reports/<int:pk>/', PendingOrderReportDetailView.as_view(), name='pending_order_report_detail'),
+    path('pending-orders/upload-pdf/', UploadAndExtractPendingOrderView.as_view()),
+    path('pending-orders/approve/<int:pk>/', ApprovePendingOrderReportView.as_view()),
+    path('pending-orders/quick-add-contact/', QuickAddContactFromStatementView.as_view()),
+    path('pending-orders/reports/', StatementListView.as_view()),
+    path('pending-orders/reports/<int:pk>/', PendingOrderReportDetailView.as_view()),
 
     # API resources (both /api/ and root)
     path('api/', include(router.urls)),

@@ -9,9 +9,11 @@ from .models import UploadedStatement, PartyAlias
 from .pdf_parser import extract_pdf_data
 from sellers.models import Seller
 from buyers.models import Buyer
-from products.models import Product, Category
-from deals.models import Deal
+from products.models import Product
+from contacts.models import Contact
+from deals.models import Deal, PendingOrder
 from recoveries.models import RecoveryRecord
+from .pending_order_parser import extract_and_compare_pending_orders, match_contact
 
 
 def match_party(raw_name, city=""):
@@ -442,9 +444,280 @@ class StatementListView(views.APIView):
             'file_size': s.file_size,
             'file_hash': s.file_hash,
             'statement_type': s.statement_type,
-            'seller_name': s.seller_name,
+            'company_name': s.company_name or (s.company_contact.name if s.company_contact else s.seller_name),
+            'report_date': s.report_date.strftime('%Y-%m-%d') if hasattr(s.report_date, 'strftime') else str(s.report_date),
             'status': s.status,
             'uploaded_at': s.uploaded_at,
             'summary': s.summary
         } for s in statements]
         return Response(data)
+
+
+class UploadAndExtractPendingOrderView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        uploaded_file = request.FILES.get('file')
+        raw_ocr_text = request.data.get('ocr_text', '').strip()
+        company_contact_id = request.data.get('company_contact_id')
+        company_name = request.data.get('company_name', '').strip()
+        report_date_str = request.data.get('report_date')
+
+        if not uploaded_file and not raw_ocr_text:
+            return Response({'error': 'Please provide either a PDF file or text content.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_contact = None
+        if company_contact_id:
+            company_contact = Contact.objects.filter(id=company_contact_id).first()
+            if company_contact and not company_name:
+                company_name = company_contact.name
+
+        filename = uploaded_file.name if uploaded_file else f"Pending_Orders_{company_name or 'Mill'}.pdf"
+        file_size = uploaded_file.size if uploaded_file else len(raw_ocr_text.encode('utf-8'))
+
+        if uploaded_file:
+            file_bytes = uploaded_file.read()
+            uploaded_file.seek(0)
+            file_hash = hashlib.sha256(file_bytes).hexdigest()
+        else:
+            file_hash = hashlib.sha256(raw_ocr_text.encode('utf-8')).hexdigest()
+
+        # Check for duplicate
+        existing = UploadedStatement.objects.filter(file_hash=file_hash, statement_type='PENDING_ORDER').first()
+        is_duplicate = False
+        duplicate_msg = ''
+        if existing:
+            is_duplicate = True
+            duplicate_msg = f"Notice: This file was already uploaded on {existing.uploaded_at.strftime('%d-%m-%Y')} as '{existing.filename}'."
+
+        statement = UploadedStatement.objects.create(
+            company_contact=company_contact,
+            company_name=company_name or (company_contact.name if company_contact else 'Mill'),
+            file=uploaded_file if uploaded_file else None,
+            filename=filename,
+            file_size=file_size,
+            file_hash=file_hash,
+            statement_type='PENDING_ORDER',
+            status=UploadedStatement.STATUS_PENDING
+        )
+
+        try:
+            target_source = statement.file.path if statement.file else raw_ocr_text
+            extracted_rows, summary, comparison_data, raw_text = extract_and_compare_pending_orders(
+                target_source,
+                company_contact=company_contact,
+                company_name=company_name,
+                report_date=report_date_str,
+                current_statement_id=statement.id
+            )
+
+            statement.extracted_data = extracted_rows
+            statement.summary = summary
+            statement.comparison_data = comparison_data
+            statement.raw_text = raw_text[:50000] if raw_text else ''
+            statement.status = UploadedStatement.STATUS_EXTRACTED
+            statement.save()
+
+            return Response({
+                'success': True,
+                'statement_id': statement.id,
+                'filename': statement.filename,
+                'company_name': statement.company_name,
+                'report_date': statement.report_date.strftime('%Y-%m-%d'),
+                'is_duplicate': is_duplicate,
+                'duplicate_message': duplicate_msg,
+                'records': extracted_rows,
+                'summary': summary,
+                'comparison': comparison_data,
+                'status': statement.status
+            })
+
+        except Exception as e:
+            statement.status = UploadedStatement.STATUS_FAILED
+            statement.error_details = str(e)
+            statement.save()
+            return Response({
+                'error': f"Failed to parse PDF: {str(e)}",
+                'statement_id': statement.id
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ApprovePendingOrderReportView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, pk):
+        from datetime import datetime
+        statement = UploadedStatement.objects.filter(id=pk).first()
+        if not statement:
+            return Response({'error': 'Statement not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        rows = request.data.get('records') or statement.extracted_data or []
+        company_contact = statement.company_contact
+        company_name = statement.company_name or (company_contact.name if company_contact else 'Mill')
+
+        created_count = 0
+        updated_count = 0
+
+        for r in rows:
+            party_name = str(r.get('party_name', '')).strip()
+            if not party_name:
+                continue
+
+            order_date_str = r.get('date') or str(statement.report_date)
+            try:
+                order_date = datetime.strptime(order_date_str, '%Y-%m-%d').date()
+            except Exception:
+                order_date = statement.report_date
+
+            contact_id = r.get('contact_id')
+            buyer_contact = None
+            if contact_id:
+                buyer_contact = Contact.objects.filter(id=contact_id).first()
+
+            product_id = r.get('product_id')
+            product_obj = None
+            if product_id:
+                product_obj = Product.objects.filter(id=product_id).first()
+
+            total_bag = Decimal(str(r.get('total_bag', 0)))
+            dispatch_bag = Decimal(str(r.get('dispatch_bag', 0)))
+            pending_bag = Decimal(str(r.get('pending_bag', 0)))
+            rate = Decimal(str(r.get('rate', 0)))
+            status_val = r.get('status', 'Pending')
+            if pending_bag <= Decimal('0.00'):
+                status_val = 'Completed'
+
+            # Try to match existing PendingOrder
+            existing_po = PendingOrder.objects.filter(
+                company_name__iexact=company_name,
+                party_name__iexact=party_name,
+                order_date=order_date,
+            ).first()
+
+            if existing_po:
+                existing_po.dispatch_quantity = dispatch_bag
+                existing_po.pending_quantity = pending_bag
+                existing_po.status = status_val
+                if rate > 0:
+                    existing_po.rate = rate
+                if buyer_contact:
+                    existing_po.buyer_contact = buyer_contact
+                if product_obj:
+                    existing_po.product = product_obj
+                existing_po.statement = statement
+                existing_po.save()
+                updated_count += 1
+            else:
+                PendingOrder.objects.create(
+                    company_contact=company_contact,
+                    company_name=company_name,
+                    buyer_contact=buyer_contact,
+                    party_name=party_name,
+                    city=r.get('city', ''),
+                    product=product_obj,
+                    product_name=r.get('product', 'MAIZE CAKE'),
+                    broker=r.get('broker', 'JALARAM'),
+                    order_date=order_date,
+                    rate=rate,
+                    rate_unit='BAG',
+                    order_quantity=total_bag,
+                    dispatch_quantity=dispatch_bag,
+                    pending_quantity=pending_bag,
+                    quantity_unit='BAG',
+                    status=status_val,
+                    statement=statement,
+                )
+                created_count += 1
+
+        statement.status = UploadedStatement.STATUS_SAVED
+        statement.save(update_fields=['status'])
+
+        return Response({
+            'success': True,
+            'message': f"Approved & Synced: {created_count} orders created, {updated_count} existing orders updated.",
+            'created_count': created_count,
+            'updated_count': updated_count,
+            'statement_status': statement.status
+        })
+
+
+class QuickAddContactFromStatementView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        party_name = request.data.get('party_name', '').strip()
+        city = request.data.get('city', '').strip()
+        phone = request.data.get('phone', '').strip()
+        statement_id = request.data.get('statement_id')
+
+        if not party_name:
+            return Response({'error': 'Party name is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        contact = Contact.objects.filter(name__iexact=party_name).first()
+        created = False
+        if not contact:
+            new_code = Contact.get_next_code()
+            contact = Contact.objects.create(
+                code=new_code,
+                name=party_name,
+                party_type='BUYER',
+                city=city,
+                mobile_1=phone or '9999999999',
+            )
+            created = True
+
+        PartyAlias.objects.update_or_create(
+            raw_name=party_name,
+            defaults={'contact': contact}
+        )
+
+        if statement_id:
+            statement = UploadedStatement.objects.filter(id=statement_id).first()
+            if statement and statement.extracted_data:
+                updated_rows = []
+                for row in statement.extracted_data:
+                    if str(row.get('party_name', '')).strip().lower() == party_name.lower():
+                        row['contact_id'] = contact.id
+                        row['contact_code'] = contact.code
+                        row['contact_name'] = contact.name
+                        row['is_new_party'] = False
+                        row['match_confidence'] = 1.0
+                    updated_rows.append(row)
+                statement.extracted_data = updated_rows
+                statement.save(update_fields=['extracted_data'])
+
+        return Response({
+            'success': True,
+            'created': created,
+            'contact': {
+                'id': contact.id,
+                'code': contact.code,
+                'name': contact.name,
+                'city': contact.city,
+            }
+        })
+
+
+class PendingOrderReportDetailView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        statement = UploadedStatement.objects.filter(id=pk).first()
+        if not statement:
+            return Response({'error': 'Statement not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            'id': statement.id,
+            'filename': statement.filename,
+            'company_name': statement.company_name or (statement.company_contact.name if statement.company_contact else statement.seller_name),
+            'company_contact_id': statement.company_contact_id,
+            'report_date': statement.report_date.strftime('%Y-%m-%d') if hasattr(statement.report_date, 'strftime') else str(statement.report_date),
+            'status': statement.status,
+            'uploaded_at': statement.uploaded_at,
+            'records': statement.extracted_data,
+            'summary': statement.summary,
+            'comparison': statement.comparison_data,
+        })
+

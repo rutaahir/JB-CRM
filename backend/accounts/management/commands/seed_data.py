@@ -53,13 +53,20 @@ class Command(BaseCommand):
                 "is_active": True,
             }
         )
-        admin.set_password("Admin@123")
+        try:
+            from decouple import config
+            admin_pwd = config("DJANGO_ADMIN_PASSWORD", default=os.environ.get("DJANGO_ADMIN_PASSWORD", None))
+        except Exception:
+            admin_pwd = os.environ.get("DJANGO_ADMIN_PASSWORD")
+        if not admin_pwd:
+            raise ValueError("DJANGO_ADMIN_PASSWORD environment variable is required and must not be empty.")
+        admin.set_password(admin_pwd)
         admin.role = User.Role.ADMIN
         admin.is_active = True
         admin.is_staff = True
         admin.is_superuser = True
         admin.save()
-        self.stdout.write(self.style.SUCCESS(f"Admin ready: {admin_email} / Admin@123"))
+        self.stdout.write(self.style.SUCCESS(f"Admin user ready: {admin_email}"))
 
         # 2. Staff Users
         staff_data = [

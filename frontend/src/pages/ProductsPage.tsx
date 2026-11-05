@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Search, LayoutGrid, Table as TableIcon, Filter } from 'lucide-react';
+import { Plus, Search, LayoutGrid, Table as TableIcon } from 'lucide-react';
 import { apiClient } from '@/api/client';
-import { Product, Category, Seller, PaginatedResponse } from '@/types';
+import { Product, Seller, PaginatedResponse } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { ProductCard } from '@/components/product/ProductCard';
 import { ProductTable } from '@/components/product/ProductTable';
@@ -13,16 +13,13 @@ import { toast } from 'sonner';
 
 export const ProductsPage: React.FC = () => {
   const { isAdmin } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [sellers, setSellers] = useState<Seller[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
 
   // Filters & View mode
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [loading, setLoading] = useState(true);
@@ -34,16 +31,12 @@ export const ProductsPage: React.FC = () => {
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const fetchCategoriesAndSellers = async () => {
+  const fetchSellers = async () => {
     try {
-      const [catRes, selRes] = await Promise.all([
-        apiClient.get<Category[]>('/categories/'),
-        apiClient.get<PaginatedResponse<Seller>>('/sellers/?page_size=100'),
-      ]);
-      setCategories(catRes.data);
-      setSellers(selRes.data.results || []);
+      const res = await apiClient.get<PaginatedResponse<Seller>>('/sellers/?page_size=100');
+      setSellers(res.data.results || []);
     } catch (err) {
-      console.error('Failed to load categories/sellers:', err);
+      console.error('Failed to load sellers:', err);
     }
   };
 
@@ -51,14 +44,10 @@ export const ProductsPage: React.FC = () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
-      params.append('page_size', '100'); // Load all active products for responsive category filtering
+      params.append('page_size', '100');
 
       if (searchQuery.trim()) {
         params.append('search', searchQuery.trim());
-      }
-      if (selectedCategory !== 'All') {
-        const cat = categories.find((c) => c.name === selectedCategory);
-        if (cat) params.append('category', String(cat.id));
       }
       if (statusFilter === 'Active') {
         params.append('is_active', 'true');
@@ -68,16 +57,15 @@ export const ProductsPage: React.FC = () => {
 
       const res = await apiClient.get<PaginatedResponse<Product>>(`/products/?${params.toString()}`);
       setProducts(res.data.results);
-      setTotalCount(res.data.count);
     } catch (err) {
       console.error('Failed to load products:', err);
     } finally {
       setLoading(false);
     }
-  }, [selectedCategory, statusFilter, searchQuery, categories]);
+  }, [statusFilter, searchQuery]);
 
   useEffect(() => {
-    fetchCategoriesAndSellers();
+    fetchSellers();
   }, []);
 
   useEffect(() => {
@@ -128,15 +116,17 @@ export const ProductsPage: React.FC = () => {
     }
   };
 
-  const categoryPills = ['All', ...categories.map((c) => c.name)];
-
   return (
     <div className="space-y-6">
-      {/* Top Header matching screenshot */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold font-heading text-slate-900">Products</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Manage cattle feed and oil cake products</p>
+          <h1 className="text-2xl font-bold font-heading text-slate-900">
+            પ્રોડક્ટ માસ્ટર (Products)
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            જલારામ બ્રોકર્સ - કપાસ ખોળ, મકાઈ ખોળ, હોમિની ફીડ, પેલેટ
+          </p>
         </div>
 
         {isAdmin && (
@@ -148,12 +138,12 @@ export const ProductsPage: React.FC = () => {
             className="px-4 py-2.5 bg-[#0B3B24] hover:bg-[#14532D] text-white rounded-xl text-xs font-semibold shadow-sm flex items-center justify-center gap-2 transition-all self-start sm:self-auto cursor-pointer"
           >
             <Plus size={16} />
-            <span>Add Product</span>
+            <span>પ્રોડક્ટ ઉમેરો (Add Product)</span>
           </button>
         )}
       </div>
 
-      {/* Filter and Control Bar matching screenshot */}
+      {/* Filter and Control Bar */}
       <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         {/* Search input */}
         <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-md">
@@ -162,55 +152,28 @@ export const ProductsPage: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search products..."
+            placeholder="શોધો (દા.ત. Kapas, Maize, Khol, Pellet)..."
             className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-forest-800/20 focus:border-forest-700 shadow-subtle transition-all"
           />
         </form>
 
-        {/* Dropdowns and View Toggle matching screenshot */}
         <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
-          {/* Category Dropdown */}
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-forest-800/20 shadow-subtle"
-          >
-            <option value="All">All Categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-
           {/* Status Dropdown */}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-forest-800/20 shadow-subtle"
           >
-            <option value="All">All Status</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
+            <option value="All">બધી સ્થિતિ (All Status)</option>
+            <option value="Active">સક્રિય (Active)</option>
+            <option value="Inactive">નિષ્ક્રિય (Inactive)</option>
           </select>
 
-          {/* Grid / Table Toggle Buttons matching screenshot */}
+          {/* Grid / Table Toggle */}
           <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/60 shadow-subtle">
             <button
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
-                viewMode === 'grid'
-                  ? 'bg-[#0B3B24] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Grid View"
-            >
-              <LayoutGrid size={15} />
-              <span className="hidden sm:inline">Grid</span>
-            </button>
-            <button
               onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
+              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
                 viewMode === 'table'
                   ? 'bg-[#0B3B24] text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -220,34 +183,28 @@ export const ProductsPage: React.FC = () => {
               <TableIcon size={15} />
               <span className="hidden sm:inline">Table</span>
             </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-[#0B3B24] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Grid View"
+            >
+              <LayoutGrid size={15} />
+              <span className="hidden sm:inline">Grid</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Pill Tabs for Categories matching screenshot */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        {categoryPills.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setSelectedCategory(cat)}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
-              selectedCategory === cat
-                ? 'bg-[#0B3B24] text-white shadow-sm font-semibold'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* Products Display (Grid View or Table View) */}
+      {/* Products Display */}
       {viewMode === 'grid' ? (
         loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {Array.from({ length: 5 }).map((_, i) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="bg-white rounded-2xl border border-slate-200 p-4 animate-pulse">
-                <div className="aspect-[16/10] bg-slate-200 rounded-xl mb-3" />
                 <div className="h-4 bg-slate-200 rounded w-3/4 mb-2" />
                 <div className="h-3 bg-slate-200 rounded w-1/2 mb-4" />
                 <div className="h-5 bg-slate-200 rounded w-2/3" />
@@ -256,11 +213,11 @@ export const ProductsPage: React.FC = () => {
           </div>
         ) : products.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center shadow-subtle">
-            <p className="text-base font-semibold text-slate-800">No products found</p>
-            <p className="text-xs text-slate-500 mt-1">Try choosing a different category or add a new product.</p>
+            <p className="text-base font-semibold text-slate-800">કોઈ પ્રોડક્ટ મળી નથી</p>
+            <p className="text-xs text-slate-500 mt-1">ઉપર "પ્રોડક્ટ ઉમેરો" પર ક્લિક કરો.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {products.map((product) => (
               <ProductCard
                 key={product.id}
@@ -297,9 +254,7 @@ export const ProductsPage: React.FC = () => {
         }}
         onSubmit={handleSaveProduct}
         initialData={selectedProduct}
-        categories={categories}
         sellers={sellers}
-        onCategoryCreated={(newCat) => setCategories((prev) => [...prev, newCat])}
         isLoading={actionLoading}
       />
 
@@ -315,11 +270,12 @@ export const ProductsPage: React.FC = () => {
         isOpen={!!productToDelete}
         onClose={() => setProductToDelete(null)}
         onConfirm={handleDeleteConfirm}
-        title="Delete Product"
-        message={`Are you sure you want to delete "${productToDelete?.name}"?`}
+        title="પ્રોડક્ટ ડિલીટ કરો"
+        message={`શું તમે "${productToDelete?.name}" પ્રોડક્ટ ડિલીટ કરવા માંગો છો?`}
         isLoading={actionLoading}
       />
     </div>
   );
 };
 
+export default ProductsPage;

@@ -27,6 +27,16 @@ A professional, modern, fully responsive CRM web application built for **Jalaram
 
 ## 🚀 Quick Setup Instructions
 
+### One-Command Quick Start (Both Backend & Frontend)
+From the root directory:
+```bash
+npm run dev:all
+# or: npm run dev
+```
+This automatically starts both the Django backend (using `backend/venv`) and the Vite React frontend.
+
+---
+
 ### Backend Setup (Django + DRF)
 
 ```bash

@@ -17,7 +17,6 @@ import {
   FileText,
   Copy,
   Plus,
-  Layers,
   Send,
   ShieldAlert,
 } from 'lucide-react';
@@ -39,19 +38,7 @@ export const RecoveriesPage: React.FC = () => {
   const [selectedRecordForPayment, setSelectedRecordForPayment] = useState<RecoveryRecord | null>(null);
   const [isManualAddOpen, setIsManualAddOpen] = useState(false);
 
-  // Multi-bill allocation modal
-  const [isAllocateModalOpen, setIsAllocateModalOpen] = useState(false);
-  const [allocateParty, setAllocateParty] = useState<{ buyerId?: number | null; buyerName: string; totalBalance: number; bills: RecoveryRecord[] } | null>(null);
-  const [allocateForm, setAllocateForm] = useState({
-    amount: '',
-    deductions_amount: '',
-    deduction_reason: 'Shortage / Claim',
-    payment_date: new Date().toISOString().split('T')[0],
-    payment_mode: 'RTGS',
-    reference_number: '',
-    collected_by: '',
-    notes: '',
-  });
+
 
   // Queries
   const { data: recoveriesData, isLoading } = useQuery({
@@ -225,60 +212,7 @@ export const RecoveriesPage: React.FC = () => {
     }
   };
 
-  // Multi-Bill Payment Allocation handler
-  const handleOpenAllocateModal = (buyerId: number | null | undefined, buyerName: string, bills: RecoveryRecord[]) => {
-    const totalBal = bills.reduce((sum, b) => sum + Number(b.balance_amount || 0), 0);
-    setAllocateParty({ buyerId, buyerName, totalBalance: totalBal, bills });
-    setAllocateForm({
-      amount: totalBal > 0 ? totalBal.toString() : '',
-      deductions_amount: '',
-      deduction_reason: 'Shortage / Claim',
-      payment_date: new Date().toISOString().split('T')[0],
-      payment_mode: 'RTGS',
-      reference_number: '',
-      collected_by: '',
-      notes: '',
-    });
-    setIsAllocateModalOpen(true);
-  };
 
-  const handleExecuteAllocation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!allocateParty) return;
-
-    const amt = parseFloat(allocateForm.amount || '0');
-    const ded = parseFloat(allocateForm.deductions_amount || '0');
-
-    if (amt <= 0 && ded <= 0) {
-      toast.error('જમા રકમ અથવા કપાત 0 કરતા વધુ હોવી જોઈએ.');
-      return;
-    }
-
-    try {
-      const res = await recoveriesApi.allocatePayment({
-        buyer_id: allocateParty.buyerId || undefined,
-        bill_ids: allocateParty.bills.map((b) => b.id),
-        amount: amt,
-        deductions_amount: ded,
-        deduction_reason: allocateForm.deduction_reason,
-        payment_date: allocateForm.payment_date,
-        payment_mode: allocateForm.payment_mode,
-        reference_number: allocateForm.reference_number,
-        collected_by: allocateForm.collected_by,
-        notes: allocateForm.notes,
-      });
-
-      if (res.success) {
-        toast.success(res.message);
-        setIsAllocateModalOpen(false);
-        setAllocateParty(null);
-        queryClient.invalidateQueries({ queryKey: ['recoveries'] });
-        queryClient.invalidateQueries({ queryKey: ['recoveries-stats'] });
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'પેમેન્ટ એલોકેટ કરવામાં ભૂલ આવી.');
-    }
-  };
 
   // Consolidated WhatsApp Reminder for a whole party with all their bills
   const handleSendConsolidatedWhatsApp = async (buyerId: number | null | undefined, buyerName: string, bills: RecoveryRecord[]) => {
@@ -625,18 +559,6 @@ export const RecoveriesPage: React.FC = () => {
                                   <span>કન્સોલિડેટેડ WhatsApp ({bills.length})</span>
                                 </button>
                               )}
-
-                              {/* Multi-Bill Payment Allocation */}
-                              {partyTotalBalance > 0 && (
-                                <button
-                                  onClick={() => handleOpenAllocateModal(firstBill.buyer, partyDisplayName, bills)}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-2xs transition-colors"
-                                  title="લમ્પ-સમ પેમેન્ટ એકસાથે ઓલ્ડ-ટુ-ન્યુ બિલોમાં જમા કરો"
-                                >
-                                  <Layers size={13} />
-                                  <span>એકસાથે પેમેન્ટ જમા</span>
-                                </button>
-                              )}
                             </div>
                           </div>
                         </td>
@@ -757,11 +679,7 @@ export const RecoveriesPage: React.FC = () => {
                           <td className="py-2.5 px-4 text-right font-black text-amber-900 text-base">
                             ₹{partyTotalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
-                          <td colSpan={3} className="py-2.5 px-4 text-right">
-                            <span className="text-xs font-medium text-amber-800">
-                              લમ્પ-સમ RTGS માટે ઉપરનું "એકસાથે પેમેન્ટ જમા" વાપરો
-                            </span>
-                          </td>
+                          <td colSpan={3} className="py-2.5 px-4 text-right"></td>
                         </tr>
                       )}
                     </React.Fragment>
@@ -773,167 +691,7 @@ export const RecoveriesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Multi-Bill Payment Allocation Modal */}
-      {isAllocateModalOpen && allocateParty && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden my-6">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-emerald-50/50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                  <Layers size={22} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    એકસાથે પેમેન્ટ જમા (Lump Sum Allocation)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    પાર્ટી: <span className="font-semibold text-slate-800">{allocateParty.buyerName}</span> (કુલ બાકી: ₹{allocateParty.totalBalance.toLocaleString('en-IN')})
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsAllocateModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
 
-            <form onSubmit={handleExecuteAllocation} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    પ્રાપ્ત રકમ (Received Amount ₹) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={allocateForm.amount}
-                    onChange={(e) => setAllocateForm({ ...allocateForm, amount: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-bold text-emerald-800 focus:outline-none focus:border-emerald-500"
-                    placeholder="e.g. 100000"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    પેમેન્ટ તારીખ (Date) *
-                  </label>
-                  <input
-                    type="date"
-                    value={allocateForm.payment_date}
-                    onChange={(e) => setAllocateForm({ ...allocateForm, payment_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Deductions / Claims support */}
-              <div className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl space-y-3">
-                <p className="text-xs font-bold text-amber-900">કપાત / ક્લેમ / શોર્ટેજ (Optional Deductions)</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      કપાત રકમ (₹)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={allocateForm.deductions_amount}
-                      onChange={(e) => setAllocateForm({ ...allocateForm, deductions_amount: e.target.value })}
-                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none"
-                      placeholder="e.g. 2500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      કપાતનું કારણ (Reason)
-                    </label>
-                    <select
-                      value={allocateForm.deduction_reason}
-                      onChange={(e) => setAllocateForm({ ...allocateForm, deduction_reason: e.target.value })}
-                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none"
-                    >
-                      <option value="Shortage / Claim">Shortage / વજન ઘટ</option>
-                      <option value="Rate Difference">Rate Difference / ભાવ ફર્ક</option>
-                      <option value="Quality Claim">Quality Claim / ક્વોલિટી વિવાદ</option>
-                      <option value="Cash Discount">Cash Discount / કસર</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    પેમેન્ટ મોડ (Payment Mode)
-                  </label>
-                  <select
-                    value={allocateForm.payment_mode}
-                    onChange={(e) => setAllocateForm({ ...allocateForm, payment_mode: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                  >
-                    <option value="RTGS">RTGS</option>
-                    <option value="NEFT">NEFT</option>
-                    <option value="CHEQUE">Cheque</option>
-                    <option value="UPI">UPI</option>
-                    <option value="CASH">Cash</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    UTR / Cheque Number
-                  </label>
-                  <input
-                    type="text"
-                    value={allocateForm.reference_number}
-                    onChange={(e) => setAllocateForm({ ...allocateForm, reference_number: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                    placeholder="UTR-XXXX-YYYY"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  ઉઘરાણી કરનાર સ્ટાફ (Collected By)
-                </label>
-                <input
-                  type="text"
-                  value={allocateForm.collected_by}
-                  onChange={(e) => setAllocateForm({ ...allocateForm, collected_by: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                  placeholder="e.g. Rajesh Patel"
-                />
-              </div>
-
-              <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                💡 આ પેમેન્ટ જૂના બિલથી શરૂ કરીને નવા બિલ તરફ આપમેળે વહેંચાઈ જશે અને બાકી રકમ શૂન્ય કરશે.
-              </p>
-
-              <div className="flex items-center justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAllocateModalOpen(false)}
-                  className="px-4 py-2 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-xs shadow-emerald-700/20"
-                >
-                  Confirm & Allocate Payment
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Single Bill Record Payment Modal */}
       {selectedRecordForPayment && (

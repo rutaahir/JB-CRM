@@ -1,3 +1,5 @@
+import csv
+from django.http import HttpResponse
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -5,18 +7,123 @@ from django.db.models import Sum, Count, Q
 from django.utils import timezone
 from decimal import Decimal
 
-from .models import Deal, BrokeragePayment
-from .serializers import DealSerializer, BrokeragePaymentSerializer
+from .models import Deal, BrokeragePayment, MillOrder, PendingOrder, PartyProductMapping, PartyProductTarget, sync_deal_side_effects
+from .serializers import (
+    DealSerializer,
+    BrokeragePaymentSerializer,
+    MillOrderSerializer,
+    PendingOrderSerializer,
+    PartyProductMappingSerializer,
+    PartyProductTargetSerializer,
+)
 from sellers.models import Seller
 from buyers.models import Buyer
 
 
 class DealViewSet(viewsets.ModelViewSet):
-    queryset = Deal.objects.all()
+    queryset = Deal.objects.all().select_related('company_contact', 'buyer_contact', 'product', 'mill_order')
     serializer_class = DealSerializer
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['status', 'brokerage_status', 'seller', 'buyer']
     search_fields = ['deal_number', 'seller_name', 'buyer_name', 'product_name', 'buyer_city']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+
+        buyer_id = params.get('buyer_contact') or params.get('buyer')
+        if buyer_id:
+            qs = qs.filter(Q(buyer_contact_id=buyer_id) | Q(buyer_id=buyer_id))
+
+        company_id = params.get('company_contact') or params.get('seller')
+        if company_id:
+            qs = qs.filter(Q(company_contact_id=company_id) | Q(seller_id=company_id))
+
+        product_id = params.get('product')
+        if product_id:
+            qs = qs.filter(product_id=product_id)
+
+        status_val = params.get('status')
+        if status_val and status_val != 'ALL':
+            qs = qs.filter(Q(status=status_val) | Q(delivery_status=status_val))
+
+        delivery_status = params.get('delivery_status')
+        if delivery_status and delivery_status != 'ALL':
+            qs = qs.filter(delivery_status=delivery_status)
+
+        payment_status = params.get('payment_status')
+        if payment_status and payment_status != 'ALL':
+            qs = qs.filter(payment_status=payment_status)
+
+        date_from = params.get('date_from')
+        if date_from:
+            qs = qs.filter(date__gte=date_from)
+
+        date_to = params.get('date_to')
+        if date_to:
+            qs = qs.filter(date__lte=date_to)
+
+        date_exact = params.get('date')
+        if date_exact:
+            qs = qs.filter(date=date_exact)
+
+        return qs
+
+    @action(detail=False, methods=['get'])
+    def export_excel(self, request):
+        """
+        Sauda Register Excel / CSV Export with UTF-8 BOM for proper Gujarati text display.
+        """
+        deals = self.get_queryset().order_by('-date', '-id')
+
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="Sauda_Register_{timezone.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+
+        # Write UTF-8 BOM so Excel opens Gujarati text correctly
+        response.write(b'\xef\xbb\xbf')
+
+        writer = csv.writer(response)
+        writer.writerow([
+            'Sauda No',
+            'Deal Date',
+            'Company / Mill',
+            'Buyer Party',
+            'Buyer City',
+            'Product',
+            'Quantity',
+            'Quantity Unit',
+            'Rate (Rs)',
+            'Rate Unit',
+            'Delivery / Payment',
+            'Gross Amount (Rs)',
+            'Mill Order No'
+        ])
+
+        for d in deals:
+            c_name = d.company_contact.name if d.company_contact else (d.seller.company_name if d.seller else (d.seller_name or "-"))
+            b_name = d.buyer_contact.name if d.buyer_contact else (d.buyer.company_name if d.buyer else (d.buyer_name or "-"))
+            b_city = d.buyer_contact.city if (d.buyer_contact and d.buyer_contact.city) else (d.buyer_city or "-")
+            p_name = d.product.name if d.product else (d.product_name or "-")
+            mo_no = getattr(getattr(d, 'mill_order', None), 'order_number', f"MO-{d.deal_number}")
+            status_val = d.delivery_payment_status or d.delivery_status or d.status or 'Pending'
+            gross_val = d.gross_amount if (d.rate_unit == d.quantity_unit and d.gross_amount is not None) else "Mixed units"
+
+            writer.writerow([
+                d.deal_number,
+                d.date.strftime('%d-%m-%Y') if hasattr(d.date, 'strftime') else str(d.date),
+                c_name,
+                b_name,
+                b_city,
+                p_name,
+                d.quantity,
+                d.quantity_unit,
+                d.rate,
+                d.rate_unit,
+                status_val,
+                gross_val,
+                mo_no
+            ])
+
+        return response
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
@@ -125,3 +232,33 @@ class DealViewSet(viewsets.ModelViewSet):
             'mill_summary': mill_summary,
             'recent_payments': payments_data
         })
+
+
+class MillOrderViewSet(viewsets.ModelViewSet):
+    queryset = MillOrder.objects.all().select_related('deal', 'company_contact', 'buyer_contact', 'product')
+    serializer_class = MillOrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['status', 'company_contact', 'buyer_contact', 'product']
+    search_fields = ['order_number', 'company_contact__name', 'buyer_contact__name', 'product__name']
+
+
+class PendingOrderViewSet(viewsets.ModelViewSet):
+    queryset = PendingOrder.objects.all().select_related('deal', 'company_contact', 'buyer_contact', 'product')
+    serializer_class = PendingOrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['status', 'company_contact', 'buyer_contact', 'product']
+    search_fields = ['deal__deal_number', 'company_contact__name', 'company_name', 'buyer_contact__name', 'party_name', 'city', 'product__name', 'product_name']
+
+
+class PartyProductMappingViewSet(viewsets.ModelViewSet):
+    queryset = PartyProductMapping.objects.all().select_related('buyer_contact', 'product')
+    serializer_class = PartyProductMappingSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['buyer_contact', 'product']
+
+
+class PartyProductTargetViewSet(viewsets.ModelViewSet):
+    queryset = PartyProductTarget.objects.all().select_related('buyer_contact', 'product')
+    serializer_class = PartyProductTargetSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['buyer_contact', 'product', 'month_str']

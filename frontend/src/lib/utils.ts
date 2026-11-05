@@ -11,12 +11,17 @@ export function cleanPhoneNumber(phone: string): string {
   if (digits.length === 12 && digits.startsWith('91')) {
     return digits.slice(2);
   }
+  if (digits.length > 10) {
+    return digits.slice(-10);
+  }
   return digits;
 }
 
-export function formatWhatsAppUrl(number: string): string {
+export function formatWhatsAppUrl(number: string, text?: string): string {
   const cleaned = cleanPhoneNumber(number);
-  return `https://wa.me/91${cleaned}`;
+  const target = cleaned ? `91${cleaned}` : '';
+  const query = text ? `?text=${encodeURIComponent(text)}` : '';
+  return `https://wa.me/${target}${query}`;
 }
 
 export function formatDate(dateString: string): string {

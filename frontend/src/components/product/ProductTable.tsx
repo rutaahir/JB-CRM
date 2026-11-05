@@ -27,13 +27,10 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              <th className="py-3.5 px-4 sm:px-6">Product</th>
-              <th className="py-3.5 px-4">Category</th>
-              <th className="py-3.5 px-4">Brand</th>
-              <th className="py-3.5 px-4">Price</th>
+              <th className="py-3.5 px-4 sm:px-6">Product Name</th>
+              <th className="py-3.5 px-4">Price / Rate</th>
               <th className="py-3.5 px-4">Packaging</th>
-              <th className="py-3.5 px-4">Protein</th>
-              <th className="py-3.5 px-4">Supplier</th>
+              <th className="py-3.5 px-4">Mill / Supplier</th>
               <th className="py-3.5 px-4">Status</th>
               <th className="py-3.5 px-4 text-center">Actions</th>
             </tr>
@@ -42,57 +39,45 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             {isLoading ? (
               Array.from({ length: 5 }).map((_, idx) => (
                 <tr key={idx} className="animate-pulse">
-                  <td colSpan={9} className="py-4 px-6">
+                  <td colSpan={6} className="py-4 px-6">
                     <div className="h-5 bg-slate-200 rounded w-full" />
                   </td>
                 </tr>
               ))
             ) : products.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-slate-400">
-                  <p className="text-base font-semibold text-slate-700">No products found</p>
-                  <p className="text-xs text-slate-400 mt-1">Try selecting another category or add a new product.</p>
+                <td colSpan={6} className="py-12 text-center text-slate-400">
+                  <p className="text-base font-semibold text-slate-700">કોઈ પ્રોડક્ટ મળી નથી</p>
+                  <p className="text-xs text-slate-400 mt-1">ઉપર "Add Product" પર ક્લિક કરી નવી પ્રોડક્ટ ઉમેરો.</p>
                 </td>
               </tr>
             ) : (
               products.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                  {/* Product info with image thumbnail */}
                   <td className="py-3 px-4 sm:px-6 whitespace-nowrap">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200/60">
-                        {p.image ? (
-                          <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-300">
-                            <Package size={18} />
-                          </div>
-                        )}
+                      <div className="w-9 h-9 rounded-lg bg-forest-50 text-forest-800 flex items-center justify-center shrink-0">
+                        <Package size={17} />
                       </div>
                       <div>
                         <p className="font-semibold text-slate-900">{p.name}</p>
+                        {p.description && (
+                          <p className="text-xs text-slate-400 truncate max-w-[250px]">{p.description}</p>
+                        )}
                       </div>
                     </div>
                   </td>
-
-                  <td className="py-3 px-4 text-slate-600 whitespace-nowrap">{p.category_name}</td>
-                  <td className="py-3 px-4 text-slate-600 whitespace-nowrap">{p.brand || '—'}</td>
 
                   <td className="py-3 px-4 font-semibold text-forest-900 whitespace-nowrap">
                     {formatPrice(p.price, p.price_unit)}
                   </td>
 
-                  <td className="py-3 px-4 text-slate-600 whitespace-nowrap">{p.packaging || '—'}</td>
+                  <td className="py-3 px-4 text-slate-600 whitespace-nowrap">{p.packaging || '50 kg Bag'}</td>
 
-                  <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
-                    {p.protein_percent ? `${p.protein_percent}%` : '—'}
+                  <td className="py-3 px-4 text-slate-600 whitespace-nowrap truncate max-w-[180px]">
+                    {p.seller_name || 'ઓપન / મલ્ટી'}
                   </td>
 
-                  <td className="py-3 px-4 text-slate-600 whitespace-nowrap truncate max-w-[150px]">
-                    {p.seller_name || '—'}
-                  </td>
-
-                  {/* Status Badge */}
                   <td className="py-3 px-4 whitespace-nowrap">
                     <span
                       className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
@@ -104,7 +89,6 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                     </span>
                   </td>
 
-                  {/* Actions */}
                   <td className="py-3 px-4 text-center whitespace-nowrap">
                     <div className="inline-flex items-center gap-1.5">
                       <button
@@ -143,4 +127,3 @@ export const ProductTable: React.FC<ProductTableProps> = ({
     </div>
   );
 };
-
