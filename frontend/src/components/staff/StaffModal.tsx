@@ -29,6 +29,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isActive, setIsActive] = useState(true);
+  const [requireLoginApproval, setRequireLoginApproval] = useState(true);
 
   useEffect(() => {
     if (initialData) {
@@ -37,12 +38,14 @@ export const StaffModal: React.FC<StaffModalProps> = ({
       setEmail(initialData.email);
       setPassword('');
       setIsActive(initialData.is_active);
+      setRequireLoginApproval(initialData.require_login_approval !== false);
     } else {
       setName('');
       setPhone('');
       setEmail('');
       setPassword('');
       setIsActive(true);
+      setRequireLoginApproval(true);
     }
   }, [initialData, isOpen]);
 
@@ -75,6 +78,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
       phone: cleanPh,
       email: email.trim().toLowerCase(),
       is_active: isActive,
+      require_login_approval: requireLoginApproval,
     };
     if (password) {
       payload.password = password;
@@ -175,6 +179,30 @@ export const StaffModal: React.FC<StaffModalProps> = ({
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
+        </div>
+
+        {/* Require Admin Login Approval Toggle */}
+        <div className="p-3 bg-amber-50/60 border border-amber-200/70 rounded-xl flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
+              <span>Admin Login Approval</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-200 text-amber-900 font-bold">
+                Recommended
+              </span>
+            </p>
+            <p className="text-[11px] text-slate-600 mt-0.5">
+              Require Admin approval in CRM panel whenever this staff tries to login
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={requireLoginApproval}
+              onChange={(e) => setRequireLoginApproval(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+          </label>
         </div>
 
         {/* Login Access Toggle Switch */}

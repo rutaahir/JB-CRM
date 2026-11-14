@@ -44,6 +44,7 @@ class User(AbstractUser):
         verbose_name='Role'
     )
     is_active = models.BooleanField(default=True, verbose_name='Login Access Active')
+    require_login_approval = models.BooleanField(default=True, verbose_name='Require Login Approval')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -63,3 +64,31 @@ class User(AbstractUser):
     @property
     def is_admin(self):
         return self.role == self.Role.ADMIN or self.is_superuser
+
+
+class StaffLoginRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pending Approval'
+        APPROVED = 'APPROVED', 'Approved'
+        REJECTED = 'REJECTED', 'Rejected'
+        EXPIRED = 'EXPIRED', 'Expired'
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='login_requests', verbose_name='Staff Member')
+    status = models.CharField(max_length=15, choices=Status.choices, default=Status.PENDING, db_index=True)
+    request_token = models.CharField(max_length=64, unique=True, db_index=True)
+    ip_address = models.CharField(max_length=50, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_login_requests', verbose_name='Reviewed By')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.CharField(max_length=255, blank=True)
+    is_consumed = models.BooleanField(default=False, help_text="True after staff gets authenticated token")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Staff Login Request'
+        verbose_name_plural = 'Staff Login Requests'
+
+    def __str__(self):
+        return f"{self.user.name} ({self.status}) - {self.created_at.strftime('%Y-%m-%d %H:%M')}"

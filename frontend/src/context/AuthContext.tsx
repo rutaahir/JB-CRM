@@ -3,6 +3,17 @@ import { apiClient } from '@/api/client';
 import { User } from '@/types';
 import { toast } from 'sonner';
 
+export interface LoginResponseResult {
+  success: boolean;
+  error?: string;
+  approvalRequired?: boolean;
+  requestId?: number;
+  requestToken?: string;
+  staffName?: string;
+  staffEmail?: string;
+  message?: string;
+}
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -10,7 +21,8 @@ interface AuthContextType {
   isAdmin: boolean;
   isStaff: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<LoginResponseResult>;
+  checkApprovalStatus: (requestToken: string) => Promise<{ status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED'; message?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -61,12 +73,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchCurrentUser();
   }, [fetchCurrentUser]);
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (email: string, password: string): Promise<LoginResponseResult> => {
     try {
       const response = await apiClient.post('/auth/login/', {
         email: email.trim(),
         password,
       });
+
+      // If login requires Admin approval
+      if (response.data?.approval_required) {
+        return {
+          success: false,
+          approvalRequired: true,
+          requestId: response.data.request_id,
+          requestToken: response.data.request_token,
+          staffName: response.data.staff_name,
+          staffEmail: response.data.staff_email,
+          message: response.data.message || 'Login approval request sent to Admin. Please wait for approval.',
+        };
+      }
 
       const { access, refresh, user: userData } = response.data;
 
@@ -95,6 +120,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       return { success: false, error: errorMsg };
+    }
+  };
+
+  const checkApprovalStatus = async (
+    requestToken: string
+  ): Promise<{ status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED'; message?: string }> => {
+    try {
+      const response = await apiClient.post('/auth/login-approval-status/', {
+        request_token: requestToken,
+      });
+
+      if (response.data.status === 'APPROVED') {
+        const { access, refresh, user: userData } = response.data;
+        localStorage.setItem('jb_access_token', access);
+        localStorage.setItem('jb_refresh_token', refresh);
+        localStorage.setItem('jb_user', JSON.stringify(userData));
+
+        setToken(access);
+        setUser(userData);
+        toast.success(`Login approved by Admin! Welcome, ${userData.name}!`);
+        return { status: 'APPROVED' };
+      }
+
+      return {
+        status: response.data.status,
+        message: response.data.message,
+      };
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data?.detail || 'Failed to check approval status.';
+      return { status: 'REJECTED', message: msg };
     }
   };
 
@@ -130,6 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isStaff,
         isLoading,
         login,
+        checkApprovalStatus,
         logout,
         refreshUser,
       }}

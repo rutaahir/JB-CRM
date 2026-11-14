@@ -30,6 +30,19 @@ class Contact(models.Model):
     aadhar_no = models.CharField(max_length=30, blank=True, default="", verbose_name="Aadhar No")
     email = models.EmailField(blank=True, default="", verbose_name="Email")
     reference_by = models.CharField(max_length=150, blank=True, default="", verbose_name="Reference By")
+    # Fields matching Pioneer Systems Desktop Contact Master screenshot
+    account_group = models.CharField(max_length=150, blank=True, default="BALANCE SHEET", verbose_name="Account Group(F1)")
+    ac_type = models.CharField(max_length=100, blank=True, default="Other", verbose_name="A/c Type")
+    tin_no = models.CharField(max_length=50, blank=True, default="", verbose_name="TIN No.")
+    cst_no = models.CharField(max_length=50, blank=True, default="", verbose_name="CST No.")
+    bank_name = models.CharField(max_length=150, blank=True, default="", verbose_name="Bank")
+    account_no = models.CharField(max_length=50, blank=True, default="", verbose_name="Account No")
+    ifsc_code = models.CharField(max_length=50, blank=True, default="", verbose_name="IFSCCode")
+    branch = models.CharField(max_length=150, blank=True, default="", verbose_name="Branch")
+    website = models.CharField(max_length=255, blank=True, default="", verbose_name="WebSite")
+    layout = models.CharField(max_length=100, blank=True, default="Pioneer", verbose_name="Layout")
+    cheque_layout = models.CharField(max_length=100, blank=True, default="", verbose_name="Cheque Layout(F1)")
+
     is_active = models.BooleanField(default=True, verbose_name="Active")
     is_test = models.BooleanField(default=False, db_index=True, verbose_name="Is Test Record")
 
@@ -45,7 +58,7 @@ class Contact(models.Model):
         return f"{self.code} - {self.name} ({self.get_party_type_display()})"
 
     @classmethod
-    def get_next_code(cls):
+    def get_next_code(cls, party_type=None):
         """
         Auto-generates sequential numeric Code across all contacts (e.g. 7001, 7002...).
         All contacts share one unified continuous code scheme regardless of party type.

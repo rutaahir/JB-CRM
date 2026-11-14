@@ -15,8 +15,12 @@ import {
   UploadCloud,
   Layers,
   Percent,
+  PhoneCall,
+  Target,
+  Flame,
 } from 'lucide-react';
 import { apiClient } from '@/api/client';
+import { leadsApi, LeadStats } from '@/api/leads';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
@@ -79,13 +83,23 @@ export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardStatsData | null>(null);
+  const [leadStats, setLeadStats] = useState<LeadStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const res = await apiClient.get<DashboardStatsData>('/dashboard/stats/');
-      setData(res.data);
+      const [statsRes, leadsRes] = await Promise.allSettled([
+        apiClient.get<DashboardStatsData>('/dashboard/stats/'),
+        leadsApi.getStats(),
+      ]);
+
+      if (statsRes.status === 'fulfilled') {
+        setData(statsRes.value.data);
+      }
+      if (leadsRes.status === 'fulfilled') {
+        setLeadStats(leadsRes.value);
+      }
     } catch (err) {
       console.error('Failed to load dashboard statistics:', err);
       toast.error('Could not load dashboard statistics.');
@@ -130,15 +144,36 @@ export const DashboardPage: React.FC = () => {
               <span>+ Sauda Entry [F6]</span>
             </button>
             <button
-              onClick={() => navigate('/pending-orders')}
+              onClick={() => navigate('/leads')}
               className="px-3.5 py-2 bg-[#0c4026] text-white border border-[#0d3f25] hover:bg-[#104e2d] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <UploadCloud size={15} className="text-amber-400" />
-              <span>Upload Mill PDF</span>
+              <PhoneCall size={14} className="text-amber-400" />
+              <span>+ Lead Follow-up</span>
+            </button>
+            <button
+              onClick={() => navigate('/contacts/master')}
+              className="px-3.5 py-2 bg-[#0c4026] text-white border border-[#0d3f25] hover:bg-[#104e2d] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Building2 size={14} className="text-emerald-400" />
+              <span>Contact Master [F8]</span>
+            </button>
+            <button
+              onClick={() => navigate('/deals?mode=targets')}
+              className="px-3.5 py-2 bg-[#0c4026] text-white border border-[#0d3f25] hover:bg-[#104e2d] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Target size={14} className="text-amber-300" />
+              <span>Party Targets</span>
+            </button>
+            <button
+              onClick={() => navigate('/pending-orders')}
+              className="px-3 py-2 bg-[#041d10] text-slate-300 border border-[#0d3f25] hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <UploadCloud size={14} className="text-amber-400" />
+              <span>Mill PDF</span>
             </button>
             <button
               onClick={fetchDashboardData}
-              className="p-2 bg-[#041d10] text-slate-300 hover:text-white rounded-xl border border-[#0d3f25] transition-colors"
+              className="p-2 bg-[#041d10] text-slate-300 hover:text-white rounded-xl border border-[#0d3f25] transition-colors cursor-pointer"
               title="Refresh Stats"
             >
               <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
@@ -148,35 +183,35 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* Main KPI Cards Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 md:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 md:gap-4">
         {/* Card 1: Today's Deals */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-sm hover:shadow transition-shadow">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow transition-shadow">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1.5 font-semibold">
-            <span>Today's Sauda Deals</span>
+            <span>Today's Deals</span>
             <div className="p-1.5 bg-forest-900/10 text-forest-900 rounded-lg">
-              <Handshake size={16} />
+              <Handshake size={15} />
             </div>
           </div>
           <div className="flex items-baseline gap-2">
             <p className="text-2xl font-black text-slate-900">
               {stats?.today_deals_count || 0}
             </p>
-            <span className="text-xs text-slate-400 font-medium">deals today</span>
+            <span className="text-xs text-slate-400 font-medium">deals</span>
           </div>
           <p className="text-[11px] text-slate-500 mt-2 flex items-center justify-between">
-            <span>Total Sauda: {stats?.total_deals || 0}</span>
+            <span>Total: {stats?.total_deals || 0}</span>
             <Link to="/deals?mode=register" className="text-forest-800 font-bold hover:underline">
-              View Register →
+              Register [F7] →
             </Link>
           </p>
         </div>
 
         {/* Card 2: Pending Orders */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-sm hover:shadow transition-shadow">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow transition-shadow">
           <div className="flex items-center justify-between text-amber-800 text-xs mb-1.5 font-semibold">
-            <span>Pending Orders (Mill)</span>
+            <span>Pending (Mill)</span>
             <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
-              <Clock size={16} />
+              <Clock size={15} />
             </div>
           </div>
           <div className="flex items-baseline gap-1.5">
@@ -186,7 +221,7 @@ export const DashboardPage: React.FC = () => {
             <span className="text-xs font-bold text-amber-700">BAG</span>
           </div>
           <p className="text-[11px] text-slate-500 mt-2 flex items-center justify-between">
-            <span>{stats?.total_pending_orders || 0} active orders</span>
+            <span>{stats?.total_pending_orders || 0} orders</span>
             <Link to="/pending-orders" className="text-amber-800 font-bold hover:underline">
               PDF Register →
             </Link>
@@ -194,11 +229,11 @@ export const DashboardPage: React.FC = () => {
         </div>
 
         {/* Card 3: Target Achievement */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-sm hover:shadow transition-shadow">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow transition-shadow">
           <div className="flex items-center justify-between text-emerald-800 text-xs mb-1.5 font-semibold">
-            <span>Monthly Target Progress</span>
+            <span>Target Progress</span>
             <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
-              <Percent size={16} />
+              <Percent size={15} />
             </div>
           </div>
           <div className="flex items-baseline gap-2">
@@ -214,17 +249,20 @@ export const DashboardPage: React.FC = () => {
               style={{ width: `${Math.min(stats?.target_percentage || 0, 100)}%` }}
             />
           </div>
-          <p className="text-[10px] text-slate-400 mt-1.5">
-            Actual: {stats?.target_actual_sum.toLocaleString()} / Goal: {stats?.target_goal_sum.toLocaleString()} BAG
+          <p className="text-[10px] text-slate-500 mt-1.5 flex items-center justify-between">
+            <span>{stats?.target_actual_sum.toLocaleString()} / {stats?.target_goal_sum.toLocaleString()}</span>
+            <Link to="/deals?mode=targets" className="text-emerald-700 font-bold hover:underline">
+              Targets →
+            </Link>
           </p>
         </div>
 
-        {/* Card 4: Contact Master Count */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-sm hover:shadow transition-shadow">
+        {/* Card 4: Party Contacts */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow transition-shadow">
           <div className="flex items-center justify-between text-slate-600 text-xs mb-1.5 font-semibold">
             <span>Party Contacts</span>
             <div className="p-1.5 bg-slate-100 text-slate-700 rounded-lg">
-              <Users2 size={16} />
+              <Users2 size={15} />
             </div>
           </div>
           <div className="flex items-baseline gap-2">
@@ -234,9 +272,36 @@ export const DashboardPage: React.FC = () => {
             <span className="text-xs text-slate-400 font-medium">parties</span>
           </div>
           <p className="text-[11px] text-slate-500 mt-2 flex items-center justify-between">
-            <span>{stats?.total_mills || 0} Mills • {stats?.total_buyers || 0} Buyers</span>
-            <Link to="/contacts/view" className="text-forest-800 font-bold hover:underline">
-              View List →
+            <span>{stats?.total_mills || 0} M • {stats?.total_buyers || 0} B</span>
+            <Link to="/contacts/master" className="text-forest-800 font-bold hover:underline">
+              Master [F8] →
+            </Link>
+          </p>
+        </div>
+
+        {/* Card 5: Leads & Smart Follow-up */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow transition-shadow">
+          <div className="flex items-center justify-between text-rose-800 text-xs mb-1.5 font-semibold">
+            <span className="flex items-center gap-1">
+              <Flame size={13} className="text-orange-500 fill-orange-500" />
+              <span>CRM Leads</span>
+            </span>
+            <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
+              <PhoneCall size={15} />
+            </div>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <p className="text-2xl font-black text-rose-950">
+              {leadStats?.total_leads || 0}
+            </p>
+            <span className="text-xs text-slate-400 font-medium">active leads</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2 flex items-center justify-between">
+            <span className="flex items-center gap-1 font-semibold text-amber-700">
+              {leadStats?.today_due || 0} due today
+            </span>
+            <Link to="/leads" className="text-rose-800 font-bold hover:underline">
+              Follow-up →
             </Link>
           </p>
         </div>

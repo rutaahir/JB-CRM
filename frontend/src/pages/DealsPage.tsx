@@ -147,14 +147,16 @@ export const DealsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const modeParam = searchParams.get('mode');
 
-  // Tab state: 'ENTRY' (F6) or 'REGISTER' (F7)
-  const [activeTab, setActiveTab] = useState<'ENTRY' | 'REGISTER'>(
-    modeParam === 'entry' ? 'ENTRY' : 'REGISTER'
+  // Tab state: 'ENTRY' (F6), 'REGISTER' (F7), or 'TARGETS'
+  const [activeTab, setActiveTab] = useState<'ENTRY' | 'REGISTER' | 'TARGETS'>(
+    modeParam === 'entry' ? 'ENTRY' : modeParam === 'targets' ? 'TARGETS' : 'REGISTER'
   );
 
   useEffect(() => {
     if (modeParam === 'entry') {
       setActiveTab('ENTRY');
+    } else if (modeParam === 'targets') {
+      setActiveTab('TARGETS');
     } else {
       setActiveTab('REGISTER');
     }
@@ -190,6 +192,73 @@ export const DealsPage: React.FC = () => {
   });
 
   const [saving, setSaving] = useState(false);
+
+  // Target tracking state (Module 6)
+  const [targetMonth, setTargetMonth] = useState('2026-10');
+  const [isSetTargetModalOpen, setIsSetTargetModalOpen] = useState(false);
+  const [targetFormData, setTargetFormData] = useState<{
+    id: number | null;
+    buyer_contact: string;
+    product: string;
+    month_str: string;
+    target_quantity: string;
+  }>({
+    id: null,
+    buyer_contact: '',
+    product: '',
+    month_str: '2026-10',
+    target_quantity: '',
+  });
+
+  const { data: targetsData, refetch: refetchTargets } = useQuery({
+    queryKey: ['party-targets', targetMonth],
+    queryFn: () => dealsApi.getPartyTargets({ month_str: targetMonth }),
+  });
+
+  const { data: mappingsData } = useQuery({
+    queryKey: ['party-mappings'],
+    queryFn: () => dealsApi.getPartyMappings(),
+  });
+
+  const targetsList = Array.isArray(targetsData) ? targetsData : [];
+  const mappingsList = Array.isArray(mappingsData) ? mappingsData : [];
+
+  const handleSaveTarget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetFormData.buyer_contact) {
+      toast.error('Please select a Buyer Party');
+      return;
+    }
+    if (!targetFormData.product) {
+      toast.error('Please select a Product');
+      return;
+    }
+    const tQty = parseFloat(targetFormData.target_quantity);
+    if (isNaN(tQty) || tQty < 0) {
+      toast.error('Please enter a valid target quantity');
+      return;
+    }
+
+    try {
+      if (targetFormData.id) {
+        await dealsApi.updatePartyTarget(targetFormData.id, { target_quantity: tQty });
+        toast.success('Monthly Target updated successfully!');
+      } else {
+        await dealsApi.savePartyTarget({
+          buyer_contact: Number(targetFormData.buyer_contact),
+          product: Number(targetFormData.product),
+          month_str: targetFormData.month_str,
+          target_quantity: tQty,
+          target_unit: 'BAG',
+        });
+        toast.success('Monthly Target set successfully!');
+      }
+      setIsSetTargetModalOpen(false);
+      refetchTargets();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to save target');
+    }
+  };
 
   // Fetch contacts (Party Master)
   const { data: contactsData } = useQuery({
@@ -449,6 +518,21 @@ export const DealsPage: React.FC = () => {
           >
             <Calendar size={14} />
             Sauda Register <span className="opacity-80 text-[10px] ml-0.5">(F7)</span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('TARGETS');
+              setSearchParams({ mode: 'targets' });
+            }}
+            className={cn(
+              'px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer',
+              activeTab === 'TARGETS'
+                ? 'bg-[#1b4332] text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            )}
+          >
+            <SlidersHorizontal size={14} />
+            Target Tracking <span className="opacity-80 text-[10px] ml-0.5">(ટાર્ગેટ)</span>
           </button>
         </div>
       </div>
@@ -946,6 +1030,362 @@ export const DealsPage: React.FC = () => {
               <div>Total Deals Displayed: {dealsList.length}</div>
               <div>Jalaram Brokers CRM • Sauda Register</div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: TARGET TRACKING & PRODUCT AUTO-MAPPING */}
+      {activeTab === 'TARGETS' && (
+        <div className="space-y-4 max-w-6xl mx-auto">
+          {/* Header Card */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <SlidersHorizontal className="text-[#1b4332]" size={18} />
+                Party-wise Product Target & Monthly Progress (પાર્ટી પ્રોડક્ટ ટાર્ગેટ)
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Rule 4: Targets are set manually per Party & Commodity. Deals automatically accumulate toward target actuals.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-700">Month:</label>
+              <input
+                type="month"
+                value={targetMonth}
+                onChange={(e) => setTargetMonth(e.target.value)}
+                className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-[#1b4332]"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setTargetFormData({
+                    id: null,
+                    buyer_contact: '',
+                    product: '',
+                    month_str: targetMonth,
+                    target_quantity: '',
+                  });
+                  setIsSetTargetModalOpen(true);
+                }}
+                className="px-3.5 py-1.5 bg-[#1b4332] hover:bg-[#2d6a4f] text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1 cursor-pointer active:scale-95"
+              >
+                <Plus size={14} className="text-amber-300" />
+                <span>Set Target (નવો ટાર્ગેટ)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 4 CRM Rules Explanatory Banner matching user prompt */}
+          <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 text-xs text-emerald-950 grid grid-cols-1 md:grid-cols-4 gap-3 shadow-xs">
+            <div className="border-r border-emerald-200/80 pr-2 last:border-none">
+              <span className="font-bold text-emerald-900 block mb-0.5">1. Auto Product Mapping</span>
+              <span className="text-[11px] text-emerald-800 leading-tight block">
+                નવી ખરીદી થાય ત્યારે Party ની Product List માં આપમેળે ઉમેરાય છે.
+              </span>
+            </div>
+            <div className="border-r border-emerald-200/80 pr-2 last:border-none">
+              <span className="font-bold text-emerald-900 block mb-0.5">2. Duplicate Protection</span>
+              <span className="text-[11px] text-emerald-800 leading-tight block">
+                એ જ Product ફરી ખરીદે તો બીજી વાર બનાવવાને બદલે જૂની એન્ટ્રી સાથે જોડાય છે.
+              </span>
+            </div>
+            <div className="border-r border-emerald-200/80 pr-2 last:border-none">
+              <span className="font-bold text-emerald-900 block mb-0.5">3. New Product Alert</span>
+              <span className="text-[11px] text-emerald-800 leading-tight block">
+                Party એ પહેલી વાર કયો Product ખરીદ્યો તેનો વિશેષ Alert મળે છે.
+              </span>
+            </div>
+            <div>
+              <span className="font-bold text-emerald-900 block mb-0.5">4. Manual Target Setting</span>
+              <span className="text-[11px] text-emerald-800 leading-tight block">
+                Target આપમેળે સેટ થતો નથી; વેપારી પ્રમાણે Manual Target રાખી શકાય છે.
+              </span>
+            </div>
+          </div>
+
+          {/* Monthly Target Progress Table */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <span className="font-bold text-xs text-slate-800">
+                Monthly Target Achievement Register — {targetMonth} (માસિક રિપોર્ટ)
+              </span>
+              <span className="text-[11px] text-slate-500 font-semibold">
+                {targetsList.length} Target(s) Registered
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                    <th className="py-2.5 px-3">Party Name (વેપારીનું નામ)</th>
+                    <th className="py-2.5 px-3">Product (પ્રોડક્ટ)</th>
+                    <th className="py-2.5 px-3 text-right">Target Qty (ટાર્ગેટ)</th>
+                    <th className="py-2.5 px-3 text-right">Actual Deal (વાસ્તવિક ખરીદી)</th>
+                    <th className="py-2.5 px-3 text-right">Remaining (બાકી ટાર્ગેટ)</th>
+                    <th className="py-2.5 px-3 text-center">Achievement %</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {targetsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-10 text-center text-slate-400">
+                        No targets set for month {targetMonth}. Click "Set Target" to assign monthly product targets for buyers.
+                      </td>
+                    </tr>
+                  ) : (
+                    targetsList.map((t: any) => {
+                      const tQty = Number(t.target_quantity) || 0;
+                      const aQty = Number(t.actual_quantity) || 0;
+                      const remaining = Math.max(0, tQty - aQty);
+                      const percent = tQty > 0 ? Math.min(100, Math.round((aQty / tQty) * 100)) : 0;
+
+                      return (
+                        <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-2.5 px-3 font-bold text-slate-900">
+                            {t.buyer_name || 'Party'}
+                          </td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-800">
+                            {t.product_name || 'Product'}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
+                            {tQty} {t.target_unit || 'BAG'}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-800">
+                            {aQty} {t.target_unit || 'BAG'}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-800">
+                            {remaining} {t.target_unit || 'BAG'}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <div className="w-28 mx-auto space-y-1">
+                              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                <div
+                                  className={cn(
+                                    'h-full rounded-full transition-all',
+                                    percent >= 100
+                                      ? 'bg-emerald-600'
+                                      : percent >= 70
+                                      ? 'bg-amber-500'
+                                      : 'bg-rose-500'
+                                  )}
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                              <span className="font-bold text-[11px] text-slate-700">{percent}%</span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span
+                              className={cn(
+                                'px-2 py-0.5 rounded text-[10px] font-bold inline-block',
+                                percent >= 100
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : percent >= 70
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : 'bg-slate-100 text-slate-700 border border-slate-300'
+                              )}
+                            >
+                              {percent >= 100 ? 'Target Achieved 🎉' : percent >= 70 ? 'On Track (70%+)' : 'In Progress'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTargetFormData({
+                                  id: t.id,
+                                  buyer_contact: String(t.buyer_contact),
+                                  product: String(t.product),
+                                  month_str: t.month_str,
+                                  target_quantity: String(t.target_quantity),
+                                });
+                                setIsSetTargetModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold border border-slate-300 cursor-pointer"
+                            >
+                              Edit Target
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Party Product Auto-Mapping History */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <span className="font-bold text-xs text-slate-800">
+                Party Product Auto-Mapping Directory (પાર્ટી ખરીદી યાદી અને પ્રોડક્ટ હિસ્ટ્રી)
+              </span>
+              <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold">
+                Auto-Mapped on First Deal
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                    <th className="py-2 px-3">Buyer Party</th>
+                    <th className="py-2 px-3">Product</th>
+                    <th className="py-2 px-3">First Purchase Date</th>
+                    <th className="py-2 px-3">Last Purchase Date</th>
+                    <th className="py-2 px-3 text-right">Last Rate</th>
+                    <th className="py-2 px-3 text-right">Total Deals</th>
+                    <th className="py-2 px-3 text-right">Total Qty</th>
+                    <th className="py-2 px-3 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {mappingsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400">
+                        No product mappings yet. Recording Sauda deals will automatically map products to parties.
+                      </td>
+                    </tr>
+                  ) : (
+                    mappingsList.map((m: any) => (
+                      <tr key={m.id} className="hover:bg-slate-50">
+                        <td className="py-2 px-3 font-bold text-slate-900">{m.buyer_name || 'Party'}</td>
+                        <td className="py-2 px-3 font-semibold text-slate-800">{m.product_name || 'Product'}</td>
+                        <td className="py-2 px-3 text-slate-600">{m.first_deal_date || '—'}</td>
+                        <td className="py-2 px-3 text-slate-600">{m.last_deal_date || '—'}</td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
+                          ₹{m.last_rate} / {m.last_rate_unit}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono">{m.total_deals_count}</td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-emerald-800">
+                          {m.total_quantity} BAG
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            Auto-Mapped
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SET TARGET MODAL */}
+      {isSetTargetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col">
+            <div className="bg-[#1b4332] text-white px-5 py-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal size={17} className="text-amber-300" />
+                <h3 className="font-bold text-sm">
+                  {targetFormData.id ? 'Edit Monthly Target' : 'Set Monthly Target (નવો ટાર્ગેટ)'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSetTargetModalOpen(false)}
+                className="text-white/80 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTarget} className="p-5 space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Buyer Party (વેપારીનું નામ)*
+                </label>
+                <select
+                  disabled={Boolean(targetFormData.id)}
+                  value={targetFormData.buyer_contact}
+                  onChange={(e) => setTargetFormData({ ...targetFormData, buyer_contact: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#1b4332] disabled:bg-slate-100"
+                  required
+                >
+                  <option value="">Select Buyer Contact...</option>
+                  {buyerContacts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.code} - {c.name} {c.city ? `(${c.city})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Product (પ્રોડક્ટ)*
+                </label>
+                <select
+                  disabled={Boolean(targetFormData.id)}
+                  value={targetFormData.product}
+                  onChange={(e) => setTargetFormData({ ...targetFormData, product: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#1b4332] disabled:bg-slate-100"
+                  required
+                >
+                  <option value="">Select Product...</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Target Month (મહિનો)*
+                </label>
+                <input
+                  type="month"
+                  value={targetFormData.month_str}
+                  onChange={(e) => setTargetFormData({ ...targetFormData, month_str: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#1b4332]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Target Quantity in BAG (ટાર્ગેટ સંખ્યા)*
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  value={targetFormData.target_quantity}
+                  onChange={(e) => setTargetFormData({ ...targetFormData, target_quantity: e.target.value })}
+                  placeholder="e.g. 500"
+                  className="w-full px-3 py-1.5 text-xs font-bold font-mono border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#1b4332]"
+                  required
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSetTargetModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#1b4332] hover:bg-[#2d6a4f] text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+                >
+                  Save Target (ટાર્ગેટ સેવ કરો)
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

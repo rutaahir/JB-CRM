@@ -297,6 +297,18 @@ class PartyProductTarget(models.Model):
         verbose_name = "Party Product Target"
         verbose_name_plural = "Party Product Targets"
 
+    @property
+    def remaining_quantity(self):
+        diff = self.target_quantity - self.actual_quantity
+        return diff if diff > 0 else Decimal('0.00')
+
+    @property
+    def achievement_percentage(self):
+        if self.target_quantity and self.target_quantity > 0:
+            pct = (self.actual_quantity / self.target_quantity) * 100
+            return round(float(pct), 1)
+        return 0.0
+
     def __str__(self):
         return f"{self.buyer_contact.name} - {self.product.name} ({self.month_str}): {self.actual_quantity}/{self.target_quantity}"
 

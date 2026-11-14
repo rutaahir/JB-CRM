@@ -9,6 +9,9 @@ import {
   Clock,
   LogOut,
   X,
+  PhoneCall,
+  Target,
+  ShieldCheck,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { useAuth } from '@/context/AuthContext';
@@ -20,7 +23,7 @@ interface MobileNavProps {
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
   const location = useLocation();
 
   return (
@@ -162,7 +165,54 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
                   );
                 })()}
 
-                {/* 5. Pending Orders & PDF Extractor (Module 4) */}
+                {/* 5. Party Targets */}
+                {(() => {
+                  const isTargets = location.pathname === '/deals' && new URLSearchParams(location.search).get('mode') === 'targets';
+                  return (
+                    <NavLink
+                      to="/deals?mode=targets"
+                      onClick={onClose}
+                      className={cn(
+                        'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                        isTargets
+                          ? 'bg-[#10482b] text-white font-semibold'
+                          : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Target size={18} className={isTargets ? 'text-amber-400' : 'text-slate-400'} />
+                        <span>Party Targets</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
+                        Target
+                      </span>
+                    </NavLink>
+                  );
+                })()}
+
+                {/* 6. Leads & Follow-up */}
+                <NavLink
+                  to="/leads"
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-[#10482b] text-white font-semibold'
+                        : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
+                    )
+                  }
+                >
+                  <div className="flex items-center gap-3">
+                    <PhoneCall size={18} className="text-amber-400" />
+                    <span>Leads & Follow-up</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-semibold">
+                    CRM
+                  </span>
+                </NavLink>
+
+                {/* 7. Pending Orders & PDF Extractor (Module 4) */}
                 <NavLink
                   to="/pending-orders"
                   onClick={onClose}
@@ -183,6 +233,30 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
                     PDF
                   </span>
                 </NavLink>
+
+                {/* 8. Staff Management & Login Approvals (Admin) */}
+                {isAdmin && (
+                  <NavLink
+                    to="/staff"
+                    onClick={onClose}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-[#10482b] text-white font-semibold'
+                          : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
+                      )
+                    }
+                  >
+                    <div className="flex items-center gap-3">
+                      <ShieldCheck size={18} className="text-amber-400" />
+                      <span>Staff & Approvals</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
+                      Admin
+                    </span>
+                  </NavLink>
+                )}
               </nav>
             </div>
 

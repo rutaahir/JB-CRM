@@ -7,8 +7,28 @@ export interface User {
   phone: string;
   role: UserRole;
   is_active: boolean;
+  require_login_approval?: boolean;
   created_at: string;
   updated_at?: string;
+}
+
+export interface StaffLoginRequest {
+  id: number;
+  user: number;
+  user_name: string;
+  user_email: string;
+  user_phone: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
+  request_token: string;
+  ip_address?: string;
+  user_agent?: string;
+  reviewed_by?: number;
+  reviewed_by_name?: string;
+  reviewed_at?: string;
+  rejection_reason?: string;
+  is_consumed: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Seller {
@@ -321,6 +341,17 @@ export interface Contact {
   aadhar_no: string;
   email: string;
   reference_by: string;
+  account_group?: string;
+  ac_type?: string;
+  tin_no?: string;
+  cst_no?: string;
+  bank_name?: string;
+  account_no?: string;
+  ifsc_code?: string;
+  branch?: string;
+  website?: string;
+  layout?: string;
+  cheque_layout?: string;
   is_active: boolean;
   is_placeholder_mobile?: boolean;
   has_deals?: boolean;

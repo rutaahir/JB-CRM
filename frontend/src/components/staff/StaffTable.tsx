@@ -6,6 +6,7 @@ import { Phone, Mail, Edit2, Trash2 } from 'lucide-react';
 interface StaffTableProps {
   staff: User[];
   onToggleAccess: (member: User) => void;
+  onToggleApproval?: (member: User) => void;
   onEdit: (member: User) => void;
   onDelete: (member: User) => void;
   isLoading?: boolean;
@@ -14,6 +15,7 @@ interface StaffTableProps {
 export const StaffTable: React.FC<StaffTableProps> = ({
   staff,
   onToggleAccess,
+  onToggleApproval,
   onEdit,
   onDelete,
   isLoading = false,
@@ -27,6 +29,7 @@ export const StaffTable: React.FC<StaffTableProps> = ({
               <th className="py-3.5 px-4 sm:px-6">Name</th>
               <th className="py-3.5 px-4">Phone</th>
               <th className="py-3.5 px-4">Email</th>
+              <th className="py-3.5 px-4 text-center">Admin Approval</th>
               <th className="py-3.5 px-4 text-center">Login Access</th>
               <th className="py-3.5 px-4">Created Date</th>
               <th className="py-3.5 px-4 text-center">Actions</th>
@@ -84,6 +87,41 @@ export const StaffTable: React.FC<StaffTableProps> = ({
                       <Mail size={13} className="text-slate-400" />
                       <span>{member.email}</span>
                     </a>
+                  </td>
+
+                  {/* Admin Approval Requirement Toggle */}
+                  <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                    {onToggleApproval ? (
+                      <button
+                        type="button"
+                        onClick={() => onToggleApproval(member)}
+                        className="relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold cursor-pointer transition-colors"
+                        title={
+                          member.require_login_approval !== false
+                            ? 'Click to allow direct login without approval'
+                            : 'Click to require Admin approval on login'
+                        }
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            member.require_login_approval !== false ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'
+                          }`}
+                        />
+                        <span
+                          className={`text-[11px] font-bold ${
+                            member.require_login_approval !== false
+                              ? 'text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md'
+                              : 'text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md'
+                          }`}
+                        >
+                          {member.require_login_approval !== false ? 'Required' : 'Direct Login'}
+                        </span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-500">
+                        {member.require_login_approval !== false ? 'Required' : 'Direct'}
+                      </span>
+                    )}
                   </td>
 
                   {/* Login Access Toggle matching screenshot */}

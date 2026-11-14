@@ -10,6 +10,7 @@ import { ContactMasterPage } from '@/pages/ContactMasterPage';
 import { StaffPage } from '@/pages/StaffPage';
 import { DealsPage } from '@/pages/DealsPage';
 import { PendingOrdersPage } from '@/pages/PendingOrdersPage';
+import { LeadsPage } from '@/pages/LeadsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -83,6 +84,9 @@ export const App: React.FC = () => {
 
               {/* Sauda Deals (Entry F6 & Register F7) */}
               <Route path="deals" element={<DealsPage />} />
+
+              {/* Leads & Follow-up Management */}
+              <Route path="leads" element={<LeadsPage />} />
 
               {/* Pending Orders & PDF Extractor (Module 4) */}
               <Route path="pending-orders" element={<PendingOrdersPage />} />

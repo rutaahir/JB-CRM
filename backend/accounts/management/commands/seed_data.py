@@ -7,6 +7,10 @@ from django.contrib.auth import get_user_model
 from sellers.models import Seller
 from buyers.models import Buyer
 from products.models import Category, Product
+from contacts.models import Contact
+from deals.models import Deal, PartyProductMapping, PartyProductTarget, sync_deal_side_effects
+import datetime
+from decimal import Decimal
 
 User = get_user_model()
 
@@ -280,26 +284,133 @@ class Command(BaseCommand):
             },
         ]
 
+        commodity_names = [
+            "Kapas Khol",
+            "Makai Khol",
+            "Hominy Feed",
+            "Pellet",
+            "Mix Cattlefeed",
+            "Wheat Bran",
+        ]
+        for c_name in commodity_names:
+            Product.objects.get_or_create(name=c_name, defaults={"is_active": True})
+
         for pdata in products_data:
-            cat = cat_map[pdata["category"]]
-            prod, created = Product.objects.get_or_create(
-                name=pdata["name"],
+            Product.objects.get_or_create(name=pdata["name"], defaults={"is_active": True})
+
+        # 7. Seed Pioneer Desktop Contact Master screenshot party: SHREE DURGA CATTEL FEED (Code 7114)
+        c_pioneer, _ = Contact.objects.get_or_create(
+            code="7114",
+            defaults={
+                "name": "SHREE DURGA CATTEL FEED",
+                "party_type": Contact.PartyType.BUYER,
+                "date": datetime.date(2024, 10, 14),
+                "account_group": "BALANCE SHEET",
+                "ac_type": "Other",
+                "contact_person_1": "LALA BHAI",
+                "mobile_1": "7041604000",
+                "gst_no": "24AJCPS5513M1Z1",
+                "city": "SANDESAR",
+                "layout": "Pioneer",
+            }
+        )
+
+        # 8. Seed Sample Parties requested by Client: ABC Traders & Shree Vijay
+        c_buyer, _ = Contact.objects.get_or_create(
+            name="ABC Traders",
+            defaults={
+                "code": "7001",
+                "party_type": Contact.PartyType.BUYER,
+                "contact_person_1": "Ramesh Bhai",
+                "mobile_1": "9825012345",
+                "city": "Ahmedabad",
+                "account_group": "BALANCE SHEET",
+                "ac_type": "Sundry Debtors",
+                "layout": "Pioneer",
+            }
+        )
+
+        c_mill, _ = Contact.objects.get_or_create(
+            name="Shree Vijay",
+            defaults={
+                "code": "7002",
+                "party_type": Contact.PartyType.COMPANY_MILL,
+                "contact_person_1": "Vijay Bhai",
+                "mobile_1": "9825054321",
+                "city": "Kadi",
+                "account_group": "BALANCE SHEET",
+                "ac_type": "Sundry Creditors",
+                "layout": "Pioneer",
+            }
+        )
+
+        # Sync existing buyers and sellers into Contact table if not already present
+        for s in Seller.objects.all():
+            Contact.objects.get_or_create(
+                name=s.company_name,
                 defaults={
-                    "category": cat,
-                    "brand": pdata["brand"],
-                    "description": pdata["description"],
-                    "price": pdata["price"],
-                    "price_unit": pdata["price_unit"],
-                    "packaging": pdata["packaging"],
-                    "protein_percent": pdata["protein_percent"],
-                    "seller": pdata["seller"],
-                    "is_active": True,
+                    "party_type": Contact.PartyType.COMPANY_MILL,
+                    "address": s.address,
+                    "mobile_1": s.phone or "9825000000",
+                    "email": s.email,
+                    "city": "Gujarat",
                 }
             )
-            if not prod.image:
-                prod.image = create_sample_image(prod.name, pdata["bg_color"], pdata["accent_color"])
-                prod.save()
 
-        self.stdout.write(self.style.SUCCESS(f"Seeded {len(products_data)} products."))
+        for b in Buyer.objects.all():
+            Contact.objects.get_or_create(
+                name=b.company_name,
+                defaults={
+                    "party_type": Contact.PartyType.BUYER,
+                    "address": b.address,
+                    "mobile_1": b.phone or "9825111111",
+                    "email": b.email,
+                    "city": "Gujarat",
+                }
+            )
+
+        # 9. Seed Sample Sauda Deal requested by user:
+        # Deal Date: 18-10-2026, Buyer: ABC Traders, Company/Mill: Shree Vijay, Product: Kapas Khol
+        # Rate: 1250 / BAG, Qty: 100 મણ, Delivery / Payment: Pending
+        p_kapas, _ = Product.objects.get_or_create(name="Kapas Khol", defaults={"is_active": True})
+        deal_num = "SD-20261018-0001"
+        sample_deal, d_created = Deal.objects.get_or_create(
+            deal_number=deal_num,
+            defaults={
+                "date": datetime.date(2026, 10, 18),
+                "buyer_contact": c_buyer,
+                "buyer_name": c_buyer.name,
+                "buyer_city": c_buyer.city,
+                "company_contact": c_mill,
+                "seller_name": c_mill.name,
+                "product": p_kapas,
+                "product_name": p_kapas.name,
+                "rate": Decimal("1250.00"),
+                "rate_unit": "BAG",
+                "quantity": 100,
+                "quantity_unit": "MAN",
+                "delivery_payment_status": "Pending",
+                "delivery_status": "Pending",
+                "payment_status": "Pending",
+            }
+        )
+        if d_created:
+            sync_deal_side_effects(sample_deal)
+
+        # 10. Seed Monthly Target as specified by Client:
+        # ABC Traders -> Kapas Khol Target: 500 BAG, Actual: 350 BAG, Remaining: 150 BAG (70%)
+        month_current = "2026-10"
+        PartyProductTarget.objects.update_or_create(
+            buyer_contact=c_buyer,
+            product=p_kapas,
+            month_str=month_current,
+            target_unit="BAG",
+            defaults={
+                "target_quantity": Decimal("500.00"),
+                "actual_quantity": Decimal("350.00"),
+            }
+        )
+
+        self.stdout.write(self.style.SUCCESS(f"Seeded Pioneer Contact Master (7114), Contacts, Sample Deal & Targets."))
         self.stdout.write(self.style.SUCCESS("All seed data created successfully!"))
 

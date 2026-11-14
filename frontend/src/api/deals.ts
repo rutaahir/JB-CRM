@@ -99,4 +99,30 @@ export const dealsApi = {
     const url = `/api/deals/export_excel/?${query.toString()}`;
     window.open(url, '_blank');
   },
+
+  getPartyTargets: async (params?: Record<string, any>) => {
+    const res = await apiClient.get<any>('/party-targets/', { params });
+    return Array.isArray(res.data) ? res.data : (res.data.results || []);
+  },
+
+  savePartyTarget: async (data: {
+    buyer_contact: number;
+    product: number;
+    month_str: string;
+    target_quantity: number;
+    target_unit?: string;
+  }) => {
+    const res = await apiClient.post<any>('/party-targets/', data);
+    return res.data;
+  },
+
+  updatePartyTarget: async (id: number, data: { target_quantity: number }) => {
+    const res = await apiClient.patch<any>(`/party-targets/${id}/`, data);
+    return res.data;
+  },
+
+  getPartyMappings: async (params?: Record<string, any>) => {
+    const res = await apiClient.get<any>('/party-mappings/', { params });
+    return Array.isArray(res.data) ? res.data : (res.data.results || []);
+  },
 };

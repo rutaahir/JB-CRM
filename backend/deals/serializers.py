@@ -51,7 +51,10 @@ class PartyProductMappingSerializer(serializers.ModelSerializer):
 
 class PartyProductTargetSerializer(serializers.ModelSerializer):
     buyer_name = serializers.ReadOnlyField(source='buyer_contact.name')
+    party_name = serializers.ReadOnlyField(source='buyer_contact.name')
     product_name = serializers.ReadOnlyField(source='product.name')
+    remaining_quantity = serializers.ReadOnlyField()
+    achievement_percentage = serializers.ReadOnlyField()
 
     class Meta:
         model = PartyProductTarget

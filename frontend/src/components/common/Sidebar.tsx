@@ -10,6 +10,9 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  PhoneCall,
+  Target,
+  ShieldCheck,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { useAuth } from '@/context/AuthContext';
@@ -21,7 +24,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggleCollapse }) => {
-  const { logout } = useAuth();
+  const { logout, isAdmin } = useAuth();
   const location = useLocation();
 
   return (
@@ -217,7 +220,80 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggleCollapse })
           );
         })()}
 
-        {/* 5. Pending Orders & PDF Extractor (Module 4) */}
+        {/* 5. Party Targets (Rule 4 Target Tracking) */}
+        {(() => {
+          const isTargets = location.pathname === '/deals' && new URLSearchParams(location.search).get('mode') === 'targets';
+          return (
+            <NavLink
+              to="/deals?mode=targets"
+              className={cn(
+                'group flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 relative select-none',
+                isTargets
+                  ? 'bg-[#104e2d] text-white shadow-sm font-semibold'
+                  : 'text-slate-300 hover:text-white hover:bg-[#0a3821]'
+              )}
+              title="Party Targets & Achievement (પાર્ટી ટાર્ગેટ)"
+            >
+              {isTargets && (
+                <span className="absolute left-0 top-2 bottom-2 w-1.5 bg-amber-400 rounded-r-full shadow-sm" />
+              )}
+              <Target
+                size={19}
+                className={cn(
+                  'shrink-0 transition-colors',
+                  isTargets ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-200'
+                )}
+              />
+              {!collapsed && (
+                <div className="flex items-center justify-between w-full">
+                  <span className="truncate">Party Targets</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
+                    Target
+                  </span>
+                </div>
+              )}
+            </NavLink>
+          );
+        })()}
+
+        {/* 6. Leads & Smart Follow-up */}
+        <NavLink
+          to="/leads"
+          className={({ isActive }) =>
+            cn(
+              'group flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 relative select-none',
+              isActive
+                ? 'bg-[#104e2d] text-white shadow-sm font-semibold'
+                : 'text-slate-300 hover:text-white hover:bg-[#0a3821]'
+            )
+          }
+          title="Lead Management & Follow-up (લીડ વ્યવસ્થાપન)"
+        >
+          {({ isActive }) => (
+            <>
+              {isActive && (
+                <span className="absolute left-0 top-2 bottom-2 w-1.5 bg-amber-400 rounded-r-full shadow-sm" />
+              )}
+              <PhoneCall
+                size={19}
+                className={cn(
+                  'shrink-0 transition-colors',
+                  isActive ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-200'
+                )}
+              />
+              {!collapsed && (
+                <div className="flex items-center justify-between w-full">
+                  <span className="truncate">Leads & Follow-up</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-semibold">
+                    CRM
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </NavLink>
+
+        {/* 7. Pending Orders & PDF Extractor (Module 4) */}
         <NavLink
           to="/pending-orders"
           className={({ isActive }) =>
@@ -253,6 +329,45 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggleCollapse })
             </>
           )}
         </NavLink>
+
+        {/* 8. Staff Management & Login Approvals (Admin Only) */}
+        {isAdmin && (
+          <NavLink
+            to="/staff"
+            className={({ isActive }) =>
+              cn(
+                'group flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 relative select-none',
+                isActive
+                  ? 'bg-[#104e2d] text-white shadow-sm font-semibold'
+                  : 'text-slate-300 hover:text-white hover:bg-[#0a3821]'
+              )
+            }
+            title="Staff Management & Login Approvals (Admin)"
+          >
+            {({ isActive }) => (
+              <>
+                {isActive && (
+                  <span className="absolute left-0 top-2 bottom-2 w-1.5 bg-amber-400 rounded-r-full shadow-sm" />
+                )}
+                <ShieldCheck
+                  size={19}
+                  className={cn(
+                    'shrink-0 transition-colors',
+                    isActive ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-200'
+                  )}
+                />
+                {!collapsed && (
+                  <div className="flex items-center justify-between w-full">
+                    <span className="truncate">Staff & Approvals</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
+                      Admin
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+          </NavLink>
+        )}
       </nav>
 
       {/* Footer Navigation: Logout */}

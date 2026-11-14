@@ -11,6 +11,8 @@ from accounts.views import (
     CurrentUserView,
     LogoutView,
     StaffViewSet,
+    StaffLoginRequestViewSet,
+    LoginApprovalCheckView,
 )
 from contacts.views import ContactViewSet
 from sellers.views import SellerViewSet
@@ -25,6 +27,7 @@ from deals.views import (
     PartyProductTargetViewSet,
 )
 from recoveries.views import RecoveryRecordViewSet, PaymentReceiptViewSet
+from leads.views import LeadViewSet
 from statements.views import (
     UploadAndExtractStatementView,
     SaveVerifiedRecordsView,
@@ -43,6 +46,7 @@ router.register(r'sellers', SellerViewSet, basename='seller')
 router.register(r'buyers', BuyerViewSet, basename='buyer')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'staff', StaffViewSet, basename='staff')
+router.register(r'staff-login-requests', StaffLoginRequestViewSet, basename='staff-login-request')
 router.register(r'deals', DealViewSet, basename='deal')
 router.register(r'mill-orders', MillOrderViewSet, basename='mill-order')
 router.register(r'pending-orders', PendingOrderViewSet, basename='pending-order')
@@ -50,16 +54,19 @@ router.register(r'party-mappings', PartyProductMappingViewSet, basename='party-m
 router.register(r'party-targets', PartyProductTargetViewSet, basename='party-target')
 router.register(r'recoveries', RecoveryRecordViewSet, basename='recovery')
 router.register(r'payments', PaymentReceiptViewSet, basename='payment')
+router.register(r'leads', LeadViewSet, basename='lead')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
 
     # Auth endpoints (supports both /api/auth/ and /auth/)
     path('api/auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/login-approval-status/', LoginApprovalCheckView.as_view(), name='login_approval_status'),
     path('api/auth/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/me/', CurrentUserView.as_view(), name='current_user'),
     path('api/auth/logout/', LogoutView.as_view(), name='logout'),
     path('auth/login/', CustomTokenObtainPairView.as_view()),
+    path('auth/login-approval-status/', LoginApprovalCheckView.as_view()),
     path('auth/refresh/', CustomTokenRefreshView.as_view()),
     path('auth/me/', CurrentUserView.as_view()),
     path('auth/logout/', LogoutView.as_view()),
