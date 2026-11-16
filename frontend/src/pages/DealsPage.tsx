@@ -439,12 +439,16 @@ export const DealsPage: React.FC = () => {
       return;
     }
     try {
-      await apiClient.post('/products/', { name: newProductName.trim(), is_active: true });
+      const res = await apiClient.post<Product>('/products/', { name: newProductName.trim(), is_active: true });
       toast.success(`Product '${newProductName.trim()}' added successfully!`);
+      if (res.data?.id) {
+        setFormData((prev) => ({ ...prev, product_id: String(res.data.id) }));
+      }
       setNewProductName('');
-      refetchProducts();
+      await refetchProducts();
+      setIsProductModalOpen(false);
     } catch (err: any) {
-      toast.error(err.response?.data?.name?.[0] || 'Failed to add product');
+      toast.error(err.response?.data?.name?.[0] || err.response?.data?.detail || 'Failed to add product');
     }
   };
 
@@ -471,6 +475,24 @@ export const DealsPage: React.FC = () => {
       search: searchTerm,
     });
     toast.success('Downloading Sauda Register Excel (UTF-8 BOM)...');
+  };
+
+  // Quick status toggle for deals in Sauda Register (Pending <-> Done)
+  const handleStatusChange = async (dealId: number, newStatus: string) => {
+    try {
+      const isDone = newStatus === 'Done';
+      await dealsApi.updateDeal(dealId, {
+        delivery_payment_status: newStatus,
+        delivery_status: isDone ? 'Done' : 'Pending',
+        payment_status: isDone ? 'Done' : 'Pending',
+        status: (isDone ? 'COMPLETED' : 'BOOKED') as any,
+      });
+      toast.success(`Status updated to '${newStatus}'!`);
+      queryClient.invalidateQueries({ queryKey: ['deals-register'] });
+      queryClient.invalidateQueries({ queryKey: ['deals-stats'] });
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to update deal status');
+    }
   };
 
   return (
@@ -633,7 +655,13 @@ export const DealsPage: React.FC = () => {
                     <select
                       data-testid="product-select"
                       value={formData.product_id}
-                      onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
+                      onChange={(e) => {
+                        if (e.target.value === '__add_new__') {
+                          setIsProductModalOpen(true);
+                        } else {
+                          setFormData({ ...formData, product_id: e.target.value });
+                        }
+                      }}
                       className="flex-1 px-3 py-1.5 text-xs font-semibold border border-slate-300 bg-white text-slate-800 rounded focus:ring-1 focus:ring-[#1b4332] focus:outline-none"
                       required
                     >
@@ -643,14 +671,17 @@ export const DealsPage: React.FC = () => {
                           {p.name}
                         </option>
                       ))}
+                      <option value="__add_new__" className="text-emerald-700 font-bold bg-emerald-50">
+                        + નવી પ્રોડક્ટ ઉમેરો (+ Add New Product)...
+                      </option>
                     </select>
                     <button
                       type="button"
                       onClick={() => setIsProductModalOpen(true)}
-                      className="px-2.5 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded shrink-0 flex items-center gap-1"
+                      className="px-2.5 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded shrink-0 flex items-center gap-1 cursor-pointer"
                       title="Add, edit or deactivate commodity products"
                     >
-                      <Settings size={13} />
+                      <Plus size={13} />
                       Manage Products
                     </button>
                   </div>
@@ -985,16 +1016,20 @@ export const DealsPage: React.FC = () => {
                             </span>
                           </td>
                           <td className="py-3 px-3 text-center whitespace-nowrap">
-                            <span
+                            <select
+                              value={statusVal === 'Done' || statusVal === 'Completed' || statusVal === 'DELIVERED' ? 'Done' : 'Pending'}
+                              onChange={(e) => handleStatusChange(deal.id, e.target.value)}
                               className={cn(
-                                'px-2 py-0.5 rounded text-[10px] font-bold',
+                                'px-2.5 py-1 rounded-lg text-xs font-bold border cursor-pointer outline-none transition-all shadow-2xs select-none',
                                 statusVal === 'Done' || statusVal === 'Completed' || statusVal === 'DELIVERED'
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                                  : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
                               )}
+                              title="Click to change status: Pending or Done"
                             >
-                              {statusVal}
-                            </span>
+                              <option value="Pending">⏳ Pending</option>
+                              <option value="Done">✓ Done</option>
+                            </select>
                           </td>
                           <td className="py-3 px-3 text-center whitespace-nowrap">
                             <button
@@ -1559,8 +1594,14 @@ export const DealsPage: React.FC = () => {
                     type="text"
                     value={newProductName}
                     onChange={(e) => setNewProductName(e.target.value)}
-                    placeholder="Product Name (e.g. Kapas Khol)"
-                    className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-[#1b4332] focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddProduct();
+                      }
+                    }}
+                    placeholder="Product Name (e.g. Kapas Khol, Maize, Pellet)"
+                    className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-[#1b4332] focus:outline-none font-semibold text-slate-800"
                   />
                   <button
                     onClick={handleAddProduct}
@@ -1602,10 +1643,18 @@ export const DealsPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-3 bg-slate-100 border-t border-slate-200 flex justify-end">
+            <div className="p-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
+              <a
+                href="/products"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-bold text-[#1b4332] hover:underline flex items-center gap-1"
+              >
+                <span>Go to Product Master (સંપૂર્ણ માસ્ટર) →</span>
+              </a>
               <button
                 onClick={() => setIsProductModalOpen(false)}
-                className="px-4 py-1.5 bg-slate-800 text-white rounded text-xs font-bold"
+                className="px-4 py-1.5 bg-slate-800 text-white rounded text-xs font-bold cursor-pointer hover:bg-slate-700"
               >
                 Close
               </button>

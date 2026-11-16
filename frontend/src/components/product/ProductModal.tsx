@@ -1,81 +1,77 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from '@/components/common/Modal';
-import { Product, Seller } from '@/types';
+import { Product } from '@/types';
 import { toast } from 'sonner';
+import { Sparkles, Check, Package } from 'lucide-react';
 
 interface ProductModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (formData: FormData) => Promise<void>;
+  onSubmit: (data: { name: string; is_active: boolean }) => Promise<void>;
   initialData?: Product | null;
-  sellers: Seller[];
   isLoading?: boolean;
 }
+
+const COMMON_COMMODITIES = [
+  'કપાસ ખોળ (Kapas Khol)',
+  'મકાઈ ખોળ (Makai Khol)',
+  'હોમિની ફીડ (Hominy Feed)',
+  'પેલેટ 10mm (Pellet 10mm)',
+  'પેલેટ 8mm (Pellet 8mm)',
+  'મિક્સ કેટલફીડ (Mix Cattle Feed)',
+  'ઘઉંનું ભુસુ (Wheat Bran)',
+  'સોયા ડી.ઓ.સી. (Soyabean DOC)',
+  'રાયડા ખોળ (Mustard DOC)',
+  'બિનોલા (Cottonseed)',
+];
 
 export const ProductModal: React.FC<ProductModalProps> = ({
   isOpen,
   onClose,
   onSubmit,
   initialData,
-  sellers,
   isLoading = false,
 }) => {
   const isEditing = !!initialData;
-  const title = isEditing ? 'પ્રોડક્ટ સુધારો (Edit Product)' : 'નવી પ્રોડક્ટ ઉમેરો (Add Product)';
+  const title = isEditing ? 'પ્રોડક્ટ સુધારો (Edit Commodity)' : 'નવી પ્રોડક્ટ ઉમેરો (Add Commodity)';
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [price, setPrice] = useState('');
-  const [priceUnit, setPriceUnit] = useState('Per Quintal');
-  const [packaging, setPackaging] = useState('50 kg Bag');
-  const [sellerId, setSellerId] = useState<number | string>('');
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
     if (initialData) {
       setName(initialData.name);
-      setDescription(initialData.description || '');
-      setPrice(initialData.price !== null && initialData.price !== undefined ? String(initialData.price) : '');
-      setPriceUnit(initialData.price_unit || 'Per Quintal');
-      setPackaging(initialData.packaging || '50 kg Bag');
-      setSellerId(initialData.seller || '');
       setIsActive(initialData.is_active);
     } else {
       setName('');
-      setDescription('');
-      setPrice('');
-      setPriceUnit('Per Quintal');
-      setPackaging('50 kg Bag');
-      setSellerId('');
       setIsActive(true);
     }
   }, [initialData, isOpen]);
 
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [isOpen]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      toast.error('પ્રોડક્ટનું નામ જરૂરી છે.');
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error('પ્રોડક્ટનું નામ દાખલ કરો (Please enter product name).');
       return;
     }
 
-    const formData = new FormData();
-    formData.append('name', name.trim());
-    formData.append('description', description.trim());
-    if (price) {
-      formData.append('price', price);
-    } else {
-      formData.append('price', '');
-    }
-    formData.append('price_unit', priceUnit);
-    formData.append('packaging', packaging);
-    if (sellerId) {
-      formData.append('seller', String(sellerId));
-    } else {
-      formData.append('seller', '');
-    }
-    formData.append('is_active', String(isActive));
+    await onSubmit({
+      name: trimmed,
+      is_active: isActive,
+    });
+  };
 
-    await onSubmit(formData);
+  const handleSelectSuggestion = (suggested: string) => {
+    setName(suggested);
+    inputRef.current?.focus();
   };
 
   return (
@@ -83,151 +79,109 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={title}
-      subtitle="જલારામ બ્રોકર્સ - કપાસ ખોળ, મકાઈ ખોળ, હોમિની ફીડ, પેલેટ વિગત"
-      maxWidth="lg"
+      subtitle="જલારામ બ્રોકર્સ - કેટલ ફીડ અને ઓઇલ કેક પ્રોડક્ટ માસ્ટર"
+      maxWidth="md"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Product Name */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-            પ્રોડક્ટનું નામ (Product Name) <span className="text-rose-500">*</span>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Commodity / Product Name */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+            પ્રોડક્ટનું નામ (Commodity / Item Name) <span className="text-rose-500">*</span>
           </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="દા.ત. શ્રી વિજય કપાસ ખોળ / Kapas Khol"
-            required
-            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-forest-800/20 focus:border-forest-700 transition-all font-semibold text-slate-900"
-          />
-        </div>
-
-        {/* Price and Unit Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-              ભાવ / દર (Price ₹) <span className="text-slate-400 font-normal lowercase">(ઓપ્શનલ)</span>
-            </label>
+          <div className="relative">
             <input
-              type="number"
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="e.g. 2350"
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-forest-800/20 focus:border-forest-700 transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-              ભાવ એકમ (Price Unit)
-            </label>
-            <select
-              value={priceUnit}
-              onChange={(e) => setPriceUnit(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-forest-800/20 focus:border-forest-700 transition-all"
-            >
-              <option value="Per Quintal">Per Quintal (ક્વિન્ટલ દીઠ)</option>
-              <option value="Per Bag">Per Bag (ગુણી દીઠ)</option>
-              <option value="Per 20 Kg">Per 20 Kg (મણ દીઠ)</option>
-              <option value="Per Ton">Per Ton (ટન દીઠ)</option>
-              <option value="Per Kg">Per Kg (કિલો દીઠ)</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Packaging and Supplier Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-              પેકિંગ વજન (Packaging)
-            </label>
-            <input
+              ref={inputRef}
               type="text"
-              value={packaging}
-              onChange={(e) => setPackaging(e.target.value)}
-              placeholder="e.g. 50 kg Bag, 60 kg Bag"
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-forest-800/20 focus:border-forest-700 transition-all"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="દા.ત. શ્રી વિજય કપાસ ખોળ / Kapas Khol"
+              required
+              disabled={isLoading}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-[#0B3B24]/20 focus:border-[#0B3B24] transition-all"
             />
           </div>
+          <p className="text-[11px] text-slate-500">
+            સૌદા એન્ટ્રી (F6), પેન્ડિંગ ઓર્ડર અને ટાર્ગેટમાં આ નામ દેખાશે.
+          </p>
+        </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-              સેલર મિલ / સપ્લાયર (Mill / Supplier)
-            </label>
-            <select
-              value={sellerId}
-              onChange={(e) => setSellerId(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-forest-800/20 focus:border-forest-700 transition-all"
-            >
-              <option value="">-- ઓપન / મલ્ટીપલ મિલ --</option>
-              {sellers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.company_name}
-                </option>
+        {/* Quick Suggestion Chips */}
+        {!isEditing && (
+          <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
+              <Sparkles size={14} className="text-emerald-700" />
+              <span>વારંવાર વપરાતી કોમોડિટીઝ (Quick Suggestions):</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {COMMON_COMMODITIES.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => handleSelectSuggestion(item)}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-white border border-emerald-200 text-emerald-900 hover:bg-emerald-100 hover:border-emerald-300 transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                >
+                  <span>{item}</span>
+                  {name === item && <Check size={12} className="text-emerald-700" />}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
-        </div>
-
-        {/* Description */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-            વિગત / નોંધ (Description)
-          </label>
-          <textarea
-            rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="પ્રોડક્ટની વિગત અથવા ક્વોલિટી સ્પષ્ટીકરણ..."
-            className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-forest-800/20 focus:border-forest-700 transition-all resize-none"
-          />
-        </div>
+        )}
 
         {/* Status Toggle */}
-        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+        <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
           <div>
-            <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">સ્થિતિ (Status)</span>
-            <p className="text-xs text-slate-500">ટ્રેડિંગ માટે ઉપલબ્ધ છે કે નહીં</p>
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+              સ્થિતિ (Trading Status)
+            </span>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              સક્રિય હોય ત્યારે જ સૌદા નોંધણી (Sauda Entry F6) માં દેખાશે.
+            </p>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={isActive}
               onChange={(e) => setIsActive(e.target.checked)}
               className="sr-only peer"
+              disabled={isLoading}
             />
-            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-forest-800 relative"></div>
-            <span className="text-xs font-semibold text-slate-800">
+            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0B3B24] relative shadow-inner" />
+            <span
+              className={`text-xs font-bold px-2 py-0.5 rounded ${
+                isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+              }`}
+            >
               {isActive ? 'Active (સક્રિય)' : 'Inactive (નિષ્ક્રિય)'}
             </span>
           </label>
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
           <button
             type="button"
             onClick={onClose}
             disabled={isLoading}
-            className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+            className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
           >
-            Cancel
+            રદ કરો (Cancel)
           </button>
           <button
             type="submit"
             disabled={isLoading}
-            className="px-6 py-2 text-sm font-semibold text-white bg-forest-900 hover:bg-forest-800 rounded-xl transition-all shadow-sm disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+            className="px-5 py-2 text-xs font-bold text-white bg-[#0B3B24] hover:bg-[#124b30] rounded-xl transition-all shadow-sm disabled:opacity-50 flex items-center gap-2 cursor-pointer"
           >
             {isLoading ? (
               <>
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Saving...</span>
+                <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>સાચવી રહ્યું છે...</span>
               </>
-            ) : isEditing ? (
-              'સુધારો (Update)'
             ) : (
-              'સાચવો (Save)'
+              <>
+                <Package size={14} />
+                <span>{isEditing ? 'સુધારો (Update Product)' : 'સાચવો (Save Product)'}</span>
+              </>
             )}
           </button>
         </div>

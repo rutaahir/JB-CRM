@@ -356,6 +356,11 @@ def sync_deal_side_effects(deal):
         f"Thank you for your business."
     )
 
+    is_done = (deal.delivery_payment_status == 'Done' or deal.delivery_status == 'Done' or deal.status in ['COMPLETED', 'DELIVERED'])
+    order_status = 'Completed' if is_done else 'Pending'
+    pending_qty = Decimal('0.00') if is_done else Decimal(deal.quantity)
+    dispatch_qty = Decimal(deal.quantity) if is_done else Decimal('0.00')
+
     # 1. Mill Order
     mo_num = f"MO-{deal.deal_number}"
     mill_order, _ = MillOrder.objects.update_or_create(
@@ -370,7 +375,7 @@ def sync_deal_side_effects(deal):
             'quantity_unit': deal.quantity_unit,
             'rate': deal.rate,
             'rate_unit': deal.rate_unit,
-            'status': deal.delivery_status or 'Pending',
+            'status': order_status,
             'whatsapp_message_mill': msg_mill,
             'whatsapp_message_buyer': msg_buyer,
         }
@@ -392,9 +397,10 @@ def sync_deal_side_effects(deal):
             'rate': deal.rate,
             'rate_unit': deal.rate_unit,
             'order_quantity': deal.quantity,
-            'pending_quantity': deal.quantity,
+            'dispatch_quantity': dispatch_qty,
+            'pending_quantity': pending_qty,
             'quantity_unit': deal.quantity_unit,
-            'status': deal.delivery_status or 'Pending',
+            'status': order_status,
         }
     )
 

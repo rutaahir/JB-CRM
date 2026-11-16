@@ -30,6 +30,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenMobileMenu }) => {
     if (!q) return;
     if (q.toUpperCase().startsWith('SD-') || q.toUpperCase().startsWith('MO-') || q.toLowerCase().includes('sauda') || q.toLowerCase().includes('deal')) {
       navigate(`/deals?mode=register&search=${encodeURIComponent(q)}`);
+    } else if (q.toLowerCase().includes('product') || q.toLowerCase().includes('khol') || q.toLowerCase().includes('feed') || q.toLowerCase().includes('pellet')) {
+      navigate(`/products?search=${encodeURIComponent(q)}`);
     } else {
       navigate(`/contacts/view?search=${encodeURIComponent(q)}`);
     }

@@ -11,6 +11,7 @@ import { StaffPage } from '@/pages/StaffPage';
 import { DealsPage } from '@/pages/DealsPage';
 import { PendingOrdersPage } from '@/pages/PendingOrdersPage';
 import { LeadsPage } from '@/pages/LeadsPage';
+import { ProductsPage } from '@/pages/ProductsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,6 +82,9 @@ export const App: React.FC = () => {
               {/* Contact Master & View */}
               <Route path="contacts/view" element={<ContactViewPage />} />
               <Route path="contacts/master" element={<ContactMasterPage />} />
+
+              {/* Product Master (Commodities) */}
+              <Route path="products" element={<ProductsPage />} />
 
               {/* Sauda Deals (Entry F6 & Register F7) */}
               <Route path="deals" element={<DealsPage />} />

@@ -158,6 +158,13 @@ export const DashboardPage: React.FC = () => {
               <span>Contact Master [F8]</span>
             </button>
             <button
+              onClick={() => navigate('/products')}
+              className="px-3.5 py-2 bg-[#0c4026] text-white border border-[#0d3f25] hover:bg-[#104e2d] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Package size={14} className="text-amber-300" />
+              <span>Product Master</span>
+            </button>
+            <button
               onClick={() => navigate('/deals?mode=targets')}
               className="px-3.5 py-2 bg-[#0c4026] text-white border border-[#0d3f25] hover:bg-[#104e2d] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
             >

@@ -12,6 +12,7 @@ import {
   PhoneCall,
   Target,
   ShieldCheck,
+  Package,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { useAuth } from '@/context/AuthContext';
@@ -112,6 +113,28 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
                   </div>
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/30 text-amber-300 font-semibold">
                     F8
+                  </span>
+                </NavLink>
+
+                {/* 2.5 Product Master */}
+                <NavLink
+                  to="/products"
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-[#10482b] text-white font-semibold'
+                        : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
+                    )
+                  }
+                >
+                  <div className="flex items-center gap-3">
+                    <Package size={18} className="text-amber-400" />
+                    <span>Product Master</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">
+                    Items
                   </span>
                 </NavLink>
 

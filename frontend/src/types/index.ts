@@ -68,18 +68,19 @@ export interface Category {
 export interface Product {
   id: number;
   name: string;
+  is_active: boolean;
+  deals_count?: number;
   category?: number | null;
   category_name?: string;
   brand?: string;
   description?: string;
   image?: string | null;
-  price: string | number | null;
-  price_unit: string;
-  packaging: string;
+  price?: string | number | null;
+  price_unit?: string;
+  packaging?: string;
   protein_percent?: string | number | null;
-  seller: number | null;
+  seller?: number | null;
   seller_name?: string | null;
-  is_active: boolean;
   created_at: string;
   updated_at?: string;
 }
