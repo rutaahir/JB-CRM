@@ -1,6 +1,7 @@
 from rest_framework import views, permissions, status
 from rest_framework.response import Response
 from django.db import transaction
+from django.utils import timezone
 from decimal import Decimal
 import hashlib
 import os
@@ -9,10 +10,10 @@ from .models import UploadedStatement, PartyAlias
 from .pdf_parser import extract_pdf_data
 from sellers.models import Seller
 from buyers.models import Buyer
-from products.models import Product
+from products.models import Product, Category
 from contacts.models import Contact
 from deals.models import Deal, PendingOrder
-from recoveries.models import RecoveryRecord
+from recoveries.models import RecoveryRecord, PaymentReceipt
 from .pending_order_parser import extract_and_compare_pending_orders, match_contact
 
 
@@ -264,6 +265,7 @@ class SaveVerifiedRecordsView(views.APIView):
 
         save_target = request.data.get('target', 'AUTO')  # 'DEALS', 'RECOVERIES', or 'AUTO'
         target_seller_id = request.data.get('seller_id')
+        target_company_contact_id = request.data.get('company_contact_id')
         seller = None
         if target_seller_id:
             try:
@@ -273,7 +275,13 @@ class SaveVerifiedRecordsView(views.APIView):
         if not seller:
             seller = statement.seller
 
-        seller_name = seller.company_name if seller else (statement.seller_name or 'Jalaram Mill Partner')
+        company_contact = statement.company_contact
+        if not company_contact and target_company_contact_id:
+            company_contact = Contact.objects.filter(id=target_company_contact_id).first()
+        if not company_contact and target_seller_id:
+            company_contact = Contact.objects.filter(id=target_seller_id, party_type='COMPANY_MILL').first()
+
+        seller_name = seller.company_name if seller else (company_contact.name if company_contact else (statement.seller_name or statement.company_name or 'Jalaram Mill Partner'))
 
         # Auto-create fallback category
         default_cat, _ = Category.objects.get_or_create(name='Cattle Feed / પશુ આહાર')
@@ -289,6 +297,8 @@ class SaveVerifiedRecordsView(views.APIView):
                 buyer_id = row.get('buyer_id') or row.get('matched_buyer_id')
                 city = str(row.get('city', '')).strip()
                 bill_date = row.get('bill_date')
+                if not bill_date or not str(bill_date).strip():
+                    bill_date = timezone.localdate()
                 item_desc = str(row.get('item_desc', '')).strip() or 'Cotton Cake / Cattle Feed'
                 qty = int(Decimal(str(row.get('qty', 0) or 0)))
                 rate = Decimal(str(row.get('rate', 0) or 0))
@@ -312,10 +322,9 @@ class SaveVerifiedRecordsView(views.APIView):
                     contact_obj = Contact.objects.filter(name__iexact=raw_buyer_str).first()
                 if not contact_obj:
                     # Auto-create Contact in Contact Master
-                    b_count = Contact.objects.filter(party_type='BUYER').count()
                     contact_obj = Contact.objects.create(
+                        code=Contact.get_next_code(),
                         party_type='BUYER',
-                        code=f"B{b_count + 1:04d}",
                         name=raw_buyer_str,
                         city=city or 'Gujarat',
                         mobile_1='9898000000'
@@ -328,9 +337,10 @@ class SaveVerifiedRecordsView(views.APIView):
                 )
 
                 buyer_obj = Buyer.objects.filter(company_name__iexact=raw_buyer_str).first()
-                company_contact = statement.company_contact
-                if not company_contact and target_seller_id:
-                    company_contact = Contact.objects.filter(id=target_seller_id).first()
+                b_name = contact_obj.name if contact_obj else (buyer_obj.company_name if buyer_obj else raw_buyer_str)
+                b_city = (contact_obj.city if contact_obj else (buyer_obj.address if buyer_obj else '')) or city
+                b_phone = (contact_obj.mobile_1 or contact_obj.phone_office_1) if contact_obj else (buyer_obj.whatsapp or buyer_obj.phone if buyer_obj else '9898000000')
+                b_credit = int(row.get('due_days') or getattr(contact_obj, 'credit_days', 15) or (buyer_obj.credit_days if buyer_obj else 15) or 15)
 
                 # Determine target: Sauda deals or recovery bills
                 stmt_type = statement.statement_type
@@ -359,8 +369,8 @@ class SaveVerifiedRecordsView(views.APIView):
                         seller=seller,
                         seller_name=seller_name,
                         buyer=buyer_obj,
-                        buyer_name=buyer_obj.company_name,
-                        buyer_city=city,
+                        buyer_name=b_name,
+                        buyer_city=b_city,
                         product=prod_obj,
                         product_name=item_desc,
                         packaging=str(row.get('pkg', '50 kg Bag')),
@@ -373,24 +383,32 @@ class SaveVerifiedRecordsView(views.APIView):
                         brokerage_from='SELLER',
                         brokerage_total=Decimal(qty) * Decimal('5.00'),
                         status='BOOKED',
-                        delivery_terms=city or 'Gujarat Station',
+                        delivery_terms=b_city or 'Gujarat Station',
                         notes='Imported from PDF Statement: ' + statement.filename
                     )
                     saved_deals += 1
 
                     # Also create corresponding recovery record linked to statement
-                    if not RecoveryRecord.objects.filter(bill_number=bill_no, seller=seller).exists():
+                    dup_rec = RecoveryRecord.objects.filter(bill_number=bill_no)
+                    if seller:
+                        dup_rec = dup_rec.filter(seller=seller)
+                    elif company_contact:
+                        dup_rec = dup_rec.filter(company_contact=company_contact)
+
+                    if not dup_rec.exists():
                         RecoveryRecord.objects.create(
                             statement=statement,
                             seller=seller,
                             seller_name=seller_name,
+                            company_contact=company_contact,
                             buyer=buyer_obj,
-                            buyer_name=buyer_obj.company_name,
-                            buyer_city=city,
-                            buyer_phone=buyer_obj.whatsapp or buyer_obj.phone,
+                            buyer_contact=contact_obj,
+                            buyer_name=b_name,
+                            buyer_city=b_city,
+                            buyer_phone=b_phone,
                             bill_number=bill_no,
                             bill_date=bill_date,
-                            due_days=buyer_obj.credit_days or 15,
+                            due_days=b_credit,
                             billed_amount=amount,
                             balance_amount=amount,
                             status='PENDING',
@@ -400,18 +418,22 @@ class SaveVerifiedRecordsView(views.APIView):
 
                 else:
                     # Save as Recovery Record with duplicate check
-                    if RecoveryRecord.objects.filter(bill_number=bill_no, seller=seller, bill_date=bill_date).exists():
+                    dup_rec = RecoveryRecord.objects.filter(bill_number=bill_no)
+                    if seller:
+                        dup_rec = dup_rec.filter(seller=seller)
+                    elif company_contact:
+                        dup_rec = dup_rec.filter(company_contact=company_contact)
+
+                    if dup_rec.exists():
                         skipped += 1
                         continue
 
-                    due_days = int(row.get('due_days') or getattr(contact_obj, 'credit_days', 15) or 15)
-                    b_name = contact_obj.name if contact_obj else (buyer_obj.company_name if buyer_obj else raw_buyer_str)
-                    b_city = (contact_obj.city if contact_obj else (buyer_obj.address if buyer_obj else '')) or city
-                    b_phone = (contact_obj.mobile_1 or contact_obj.phone_office_1) if contact_obj else (buyer_obj.whatsapp or buyer_obj.phone if buyer_obj else '9898000000')
-
+                    due_days = b_credit
                     billed_amt = Decimal(str(row.get('billed_amount') or amount))
                     paid_amt = Decimal(str(row.get('paid_amount', 0) or 0))
                     due_date_val = row.get('due_date')
+                    if not due_date_val or not str(due_date_val).strip():
+                        due_date_val = None
 
                     if amount <= 0 and paid_amt > 0:
                         rec_status = 'PAID'
