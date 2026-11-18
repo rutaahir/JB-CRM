@@ -81,18 +81,27 @@ class UploadAndExtractStatementView(views.APIView):
 
     def post(self, request):
         uploaded_file = request.FILES.get('file')
+        raw_ocr_text = request.data.get('ocr_text', '').strip()
         seller_id = request.data.get('seller_id')
+        company_contact_id = request.data.get('company_contact_id')
 
-        if not uploaded_file:
-            return Response({'error': 'No file was provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not uploaded_file and not raw_ocr_text:
+            return Response({'error': 'No file or statement text was provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not uploaded_file.name.lower().endswith('.pdf'):
+        if uploaded_file and not uploaded_file.name.lower().endswith('.pdf'):
             return Response({'error': 'Only PDF files are supported.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Compute SHA-256 hash of file contents
-        file_bytes = uploaded_file.read()
-        uploaded_file.seek(0)
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        # Compute SHA-256 hash
+        if uploaded_file:
+            file_bytes = uploaded_file.read()
+            uploaded_file.seek(0)
+            file_hash = hashlib.sha256(file_bytes).hexdigest()
+            filename = uploaded_file.name
+            file_size = uploaded_file.size
+        else:
+            file_hash = hashlib.sha256(raw_ocr_text.encode('utf-8')).hexdigest()
+            filename = f"Statement_Text_{timezone.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            file_size = len(raw_ocr_text)
 
         # Check for duplicate previously uploaded file
         existing = UploadedStatement.objects.filter(file_hash=file_hash).first()
@@ -101,6 +110,10 @@ class UploadAndExtractStatementView(views.APIView):
         if existing:
             is_duplicate = True
             duplicate_msg = f"Notice: This exact file was already uploaded on {existing.uploaded_at.strftime('%d-%m-%Y')} as '{existing.filename}' (Status: {existing.status})."
+
+        company_contact = None
+        if company_contact_id:
+            company_contact = Contact.objects.filter(id=company_contact_id).first()
 
         seller = None
         if seller_id:
@@ -111,16 +124,19 @@ class UploadAndExtractStatementView(views.APIView):
 
         statement = UploadedStatement.objects.create(
             seller=seller,
-            seller_name=seller.company_name if seller else '',
-            file=uploaded_file,
-            filename=uploaded_file.name,
-            file_size=uploaded_file.size,
+            seller_name=seller.company_name if seller else (company_contact.name if company_contact else ''),
+            company_contact=company_contact,
+            company_name=company_contact.name if company_contact else (seller.company_name if seller else ''),
+            file=uploaded_file if uploaded_file else None,
+            filename=filename,
+            file_size=file_size,
             file_hash=file_hash,
             status=UploadedStatement.STATUS_PENDING
         )
 
         try:
-            result = extract_pdf_data(statement.file.path)
+            target_source = statement.file.path if statement.file else raw_ocr_text
+            result = extract_pdf_data(target_source)
             raw_records = result.get('records', [])
             statement.raw_text = result.get('raw_text', '')
             statement.error_details = result.get('debug_info', '')
@@ -129,6 +145,19 @@ class UploadAndExtractStatementView(views.APIView):
 
             # Check if company detected in PDF
             detected_company_name = result.get('detected_company', '').strip()
+            if detected_company_name:
+                statement.company_name = detected_company_name
+                if not company_contact:
+                    matched_comp = Contact.objects.filter(party_type='COMPANY_MILL', name__iexact=detected_company_name).first()
+                    if not matched_comp:
+                        for c in Contact.objects.filter(party_type='COMPANY_MILL'):
+                            if c.name.lower() in detected_company_name.lower() or detected_company_name.lower() in c.name.lower():
+                                matched_comp = c
+                                break
+                    if matched_comp:
+                        company_contact = matched_comp
+                        statement.company_contact = company_contact
+
             if detected_company_name and not seller:
                 matched_seller = Seller.objects.filter(company_name__iexact=detected_company_name).first()
                 if not matched_seller:
@@ -289,8 +318,7 @@ class SaveVerifiedRecordsView(views.APIView):
                         code=f"B{b_count + 1:04d}",
                         name=raw_buyer_str,
                         city=city or 'Gujarat',
-                        mobile_1='9898000000',
-                        credit_days=15
+                        mobile_1='9898000000'
                     )
 
                 # 2. Save alias mapping so subsequent imports recognize this name
@@ -376,12 +404,23 @@ class SaveVerifiedRecordsView(views.APIView):
                         skipped += 1
                         continue
 
-                    due_days = int(row.get('due_days', contact_obj.credit_days if contact_obj else (buyer_obj.credit_days if buyer_obj else 15)) or 15)
+                    due_days = int(row.get('due_days') or getattr(contact_obj, 'credit_days', 15) or 15)
                     b_name = contact_obj.name if contact_obj else (buyer_obj.company_name if buyer_obj else raw_buyer_str)
                     b_city = (contact_obj.city if contact_obj else (buyer_obj.address if buyer_obj else '')) or city
                     b_phone = (contact_obj.mobile_1 or contact_obj.phone_office_1) if contact_obj else (buyer_obj.whatsapp or buyer_obj.phone if buyer_obj else '9898000000')
 
-                    RecoveryRecord.objects.create(
+                    billed_amt = Decimal(str(row.get('billed_amount') or amount))
+                    paid_amt = Decimal(str(row.get('paid_amount', 0) or 0))
+                    due_date_val = row.get('due_date')
+
+                    if amount <= 0 and paid_amt > 0:
+                        rec_status = 'PAID'
+                    elif paid_amt > 0 and amount < billed_amt:
+                        rec_status = 'PARTIAL'
+                    else:
+                        rec_status = 'PENDING'
+
+                    rec_obj = RecoveryRecord.objects.create(
                         statement=statement,
                         seller=seller,
                         seller_name=seller_name,
@@ -394,11 +433,22 @@ class SaveVerifiedRecordsView(views.APIView):
                         bill_number=bill_no,
                         bill_date=bill_date,
                         due_days=due_days,
-                        billed_amount=Decimal(str(row.get('billed_amount', amount))),
+                        due_date=due_date_val,
+                        billed_amount=billed_amt,
                         balance_amount=amount,
-                        status='PENDING',
+                        status=rec_status,
                         notes=item_desc
                     )
+
+                    if paid_amt > 0:
+                        PaymentReceipt.objects.create(
+                            recovery=rec_obj,
+                            amount=paid_amt,
+                            payment_date=bill_date or timezone.localdate(),
+                            payment_mode='ADJUSTMENT',
+                            notes='Initial payment recorded from statement'
+                        )
+
                     saved_recoveries += 1
 
             statement.status = UploadedStatement.STATUS_SAVED

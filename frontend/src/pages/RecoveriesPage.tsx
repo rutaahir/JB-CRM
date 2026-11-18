@@ -58,6 +58,8 @@ export const RecoveriesPage: React.FC = () => {
 
   // PDF Upload State
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadOcrText, setUploadOcrText] = useState<string>('');
+  const [showOcrInput, setShowOcrInput] = useState<boolean>(false);
   const [uploadSellerId, setUploadSellerId] = useState<string>('');
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractedResult, setExtractedResult] = useState<any | null>(null);
@@ -260,15 +262,20 @@ export const RecoveriesPage: React.FC = () => {
   // PDF Extraction Handler
   const handleUploadPDF = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadFile) {
-      toast.error('કૃપા કરી PDF ફાઇલ પસંદ કરો.');
+    if (!uploadFile && !uploadOcrText.trim()) {
+      toast.error('કૃપા કરી PDF ફાઇલ પસંદ કરો અથવા સ્ટેટમેન્ટ ટેક્સ્ટ દાખલ કરો.');
       return;
     }
 
     try {
       setIsExtracting(true);
       const formData = new FormData();
-      formData.append('file', uploadFile);
+      if (uploadFile) {
+        formData.append('file', uploadFile);
+      }
+      if (uploadOcrText.trim()) {
+        formData.append('ocr_text', uploadOcrText.trim());
+      }
       if (uploadSellerId) {
         formData.append('seller_id', uploadSellerId);
         formData.append('company_contact_id', uploadSellerId);
@@ -276,9 +283,9 @@ export const RecoveriesPage: React.FC = () => {
 
       const res = await recoveriesApi.uploadStatement(formData);
       setExtractedResult(res);
-      toast.success(`PDF સફળતાપૂર્વક વંચાઈ ગઈ! ${res.records_count} રેકોર્ડ્સ મળ્યા.`);
+      toast.success(`સ્ટેટમેન્ટ સફળતાપૂર્વક વંચાઈ ગયું! ${res.records_count} બિલ રેકોર્ડ્સ મળ્યા.`);
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'PDF વાંચવામાં ભૂલ આવી.');
+      toast.error(err.response?.data?.error || 'સ્ટેટમેન્ટ વાંચવામાં ભૂલ આવી.');
     } finally {
       setIsExtracting(false);
     }
@@ -965,53 +972,94 @@ export const RecoveriesPage: React.FC = () => {
           </div>
 
           {/* Upload Form */}
-          <form onSubmit={handleUploadPDF} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                સપ્લાયર મિલ / કંપની પસંદ કરો (Mill Partner)
-              </label>
-              <select
-                value={uploadSellerId}
-                onChange={(e) => setUploadSellerId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
-              >
-                <option value="">-- આપોઆપ શોધો (Auto-Detect from PDF Header) --</option>
-                {millContacts.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} {m.city ? `(${m.city})` : ''}
-                  </option>
-                ))}
-              </select>
+          <div className="flex items-center gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setShowOcrInput(false)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                !showOcrInput
+                  ? 'bg-forest-900 text-white border-forest-900 shadow-xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              📄 PDF Upload (શ્રી વિજય, આકાશ એગ્રો, રાધેશ્યામ, B.H. એગ્રી)
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowOcrInput(true)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                showOcrInput
+                  ? 'bg-forest-900 text-white border-forest-900 shadow-xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              📝 Paste Text / OCR
+            </button>
+          </div>
+
+          <form onSubmit={handleUploadPDF} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  સપ્લાયર મિલ / કંપની પસંદ કરો (Mill Partner)
+                </label>
+                <select
+                  value={uploadSellerId}
+                  onChange={(e) => setUploadSellerId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
+                >
+                  <option value="">-- આપોઆપ શોધો (Auto-Detect from Header) --</option>
+                  {millContacts.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} {m.city ? `(${m.city})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {!showOcrInput ? (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    PDF ફાઇલ પસંદ કરો (Select Statement PDF) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#0B3B24] file:text-white hover:file:bg-[#124b30] cursor-pointer"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    સ્ટેટમેન્ટ ટેક્સ્ટ પેસ્ટ કરો (Paste OCR / Statement Text) <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Paste statement lines or WhatsApp text here..."
+                    value={uploadOcrText}
+                    onChange={(e) => setUploadOcrText(e.target.value)}
+                    className="w-full text-xs font-mono p-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white"
+                  />
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                PDF ફાઇલ પસંદ કરો (Select Statement PDF) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#0B3B24] file:text-white hover:file:bg-[#124b30] cursor-pointer"
-                required
-              />
-            </div>
-
-            <div className="flex items-end">
+            <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={isExtracting || !uploadFile}
-                className="w-full py-2.5 px-4 bg-[#0B3B24] hover:bg-[#124b30] text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                disabled={isExtracting || (!uploadFile && !uploadOcrText.trim())}
+                className="py-2.5 px-6 bg-[#0B3B24] hover:bg-[#124b30] text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer transition-all"
               >
                 {isExtracting ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>PDF વંચાઈ રહી છે...</span>
+                    <span>સ્ટેટમેન્ટ વંચાઈ રહ્યું છે...</span>
                   </>
                 ) : (
                   <>
                     <UploadCloud size={16} />
-                    <span>ડેટા ફેચ કરો (Extract & Analyze)</span>
+                    <span>ડેટા ફેચ કરો (Extract & Analyze Statement)</span>
                   </>
                 )}
               </button>
