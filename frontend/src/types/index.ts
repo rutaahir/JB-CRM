@@ -231,6 +231,12 @@ export interface RecoveryRecord {
   buyer_name: string;
   buyer_city: string;
   buyer_phone: string;
+  buyer_contact?: number | null;
+  buyer_contact_id?: number | null;
+  buyer_contact_name?: string;
+  company_contact?: number | null;
+  company_contact_id?: number | null;
+  company_contact_name?: string;
   bill_number: string;
   bill_date: string;
   due_days: number;
@@ -433,8 +439,13 @@ export interface PendingOrderRecord {
   deal?: number | null;
   company_contact?: number | null;
   company_name: string;
+  company_phone?: string;
+  company_code?: string;
   buyer_contact?: number | null;
   buyer_name?: string;
+  buyer_phone?: string;
+  buyer_code?: string;
+  buyer_city?: string;
   party_name: string;
   city: string;
   product?: number | null;

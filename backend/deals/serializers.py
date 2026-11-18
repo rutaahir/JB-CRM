@@ -18,7 +18,12 @@ class MillOrderSerializer(serializers.ModelSerializer):
 
 class PendingOrderSerializer(serializers.ModelSerializer):
     company_name = serializers.SerializerMethodField()
+    company_phone = serializers.SerializerMethodField()
+    company_code = serializers.SerializerMethodField()
     buyer_name = serializers.SerializerMethodField()
+    buyer_phone = serializers.SerializerMethodField()
+    buyer_code = serializers.SerializerMethodField()
+    buyer_city = serializers.SerializerMethodField()
     product_name = serializers.SerializerMethodField()
     days_pending = serializers.SerializerMethodField()
 
@@ -29,8 +34,27 @@ class PendingOrderSerializer(serializers.ModelSerializer):
     def get_company_name(self, obj):
         return obj.company_name or (obj.company_contact.name if obj.company_contact else '')
 
+    def get_company_phone(self, obj):
+        if obj.company_contact:
+            return obj.company_contact.mobile_1 or obj.company_contact.phone_office_1 or ''
+        return ''
+
+    def get_company_code(self, obj):
+        return obj.company_contact.code if obj.company_contact else ''
+
     def get_buyer_name(self, obj):
         return obj.party_name or (obj.buyer_contact.name if obj.buyer_contact else '')
+
+    def get_buyer_phone(self, obj):
+        if obj.buyer_contact:
+            return obj.buyer_contact.mobile_1 or obj.buyer_contact.phone_office_1 or ''
+        return ''
+
+    def get_buyer_code(self, obj):
+        return obj.buyer_contact.code if obj.buyer_contact else ''
+
+    def get_buyer_city(self, obj):
+        return obj.city or (obj.buyer_contact.city if obj.buyer_contact else '')
 
     def get_product_name(self, obj):
         return obj.product_name or (obj.product.name if obj.product else '')

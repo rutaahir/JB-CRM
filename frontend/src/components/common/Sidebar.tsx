@@ -14,6 +14,7 @@ import {
   Target,
   ShieldCheck,
   Package,
+  IndianRupee,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { useAuth } from '@/context/AuthContext';
@@ -293,6 +294,43 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggleCollapse })
             </NavLink>
           );
         })()}
+
+        {/* 5.5. Payment Recovery (ઉઘરાણી / Payment Recovery) */}
+        <NavLink
+          to="/recoveries"
+          className={({ isActive }) =>
+            cn(
+              'group flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 relative select-none',
+              isActive
+                ? 'bg-[#104e2d] text-white shadow-sm font-semibold'
+                : 'text-slate-300 hover:text-white hover:bg-[#0a3821]'
+            )
+          }
+          title="Payment Recovery & Outstanding (પેમેન્ટ ઉઘરાણી)"
+        >
+          {({ isActive }) => (
+            <>
+              {isActive && (
+                <span className="absolute left-0 top-2 bottom-2 w-1.5 bg-amber-400 rounded-r-full shadow-sm" />
+              )}
+              <IndianRupee
+                size={19}
+                className={cn(
+                  'shrink-0 transition-colors',
+                  isActive ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-200'
+                )}
+              />
+              {!collapsed && (
+                <div className="flex items-center justify-between w-full">
+                  <span className="truncate">Payment Recovery</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-semibold">
+                    Recovery
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </NavLink>
 
         {/* 6. Leads & Smart Follow-up */}
         <NavLink

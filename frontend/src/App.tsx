@@ -12,6 +12,7 @@ import { DealsPage } from '@/pages/DealsPage';
 import { PendingOrdersPage } from '@/pages/PendingOrdersPage';
 import { LeadsPage } from '@/pages/LeadsPage';
 import { ProductsPage } from '@/pages/ProductsPage';
+import { RecoveriesPage } from '@/pages/RecoveriesPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -91,6 +92,9 @@ export const App: React.FC = () => {
 
               {/* Leads & Follow-up Management */}
               <Route path="leads" element={<LeadsPage />} />
+
+              {/* Payment Recovery & Outstanding Management */}
+              <Route path="recoveries" element={<RecoveriesPage />} />
 
               {/* Pending Orders & PDF Extractor (Module 4) */}
               <Route path="pending-orders" element={<PendingOrdersPage />} />

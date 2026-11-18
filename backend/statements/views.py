@@ -19,10 +19,10 @@ from .pending_order_parser import extract_and_compare_pending_orders, match_cont
 def match_party(raw_name, city=""):
     """
     3-tier party resolver:
-    1. Check PartyAlias table (remembered mappings)
-    2. Check exact match on Buyer.company_name
-    3. Check substring / normalized match
-    Returns (matched_buyer, confidence)
+    1. Check PartyAlias table (remembered mappings) -> Contact or Buyer
+    2. Check Contact master (party_type='BUYER' or any contact)
+    3. Check legacy Buyer table
+    Returns (matched_contact_or_buyer, confidence)
     """
     if not raw_name:
         return None, 0.0
@@ -30,24 +30,42 @@ def match_party(raw_name, city=""):
     clean_raw = raw_name.strip()
 
     # Tier 1: Check saved alias
-    alias = PartyAlias.objects.filter(raw_name__iexact=clean_raw).select_related('buyer').first()
-    if alias and alias.buyer:
-        return alias.buyer, 1.0
+    alias = PartyAlias.objects.filter(raw_name__iexact=clean_raw).select_related('contact', 'buyer').first()
+    if alias:
+        if alias.contact:
+            return alias.contact, 1.0
+        if alias.buyer:
+            return alias.buyer, 1.0
 
-    # Tier 2: Check exact match
-    exact = Buyer.objects.filter(company_name__iexact=clean_raw).first()
-    if exact:
-        return exact, 0.95
+    # Tier 2: Check Contact master (primary source of truth)
+    exact_contact = Contact.objects.filter(name__iexact=clean_raw).first()
+    if exact_contact:
+        return exact_contact, 0.98
+
+    # Tier 3: Check legacy Buyer table
+    exact_buyer = Buyer.objects.filter(company_name__iexact=clean_raw).first()
+    if exact_buyer:
+        return exact_buyer, 0.95
 
     # If city is combined, try stripping city
     if city and clean_raw.lower().endswith(city.lower()):
         stripped = clean_raw[:-len(city)].strip()
-        exact_stripped = Buyer.objects.filter(company_name__iexact=stripped).first()
-        if exact_stripped:
-            return exact_stripped, 0.90
+        exact_stripped_contact = Contact.objects.filter(name__iexact=stripped).first()
+        if exact_stripped_contact:
+            return exact_stripped_contact, 0.92
+        exact_stripped_buyer = Buyer.objects.filter(company_name__iexact=stripped).first()
+        if exact_stripped_buyer:
+            return exact_stripped_buyer, 0.90
 
-    # Tier 3: Substring / partial match
+    # Tier 4: Substring / partial match on Contact
     lower_raw = clean_raw.lower()
+    for contact in Contact.objects.filter(party_type='BUYER'):
+        c_name = contact.name.lower()
+        if c_name == lower_raw:
+            return contact, 0.98
+        if c_name in lower_raw or lower_raw in c_name:
+            return contact, 0.80
+
     for buyer in Buyer.objects.all():
         b_name = buyer.company_name.lower()
         if b_name == lower_raw:
@@ -135,10 +153,26 @@ class UploadAndExtractStatementView(views.APIView):
             for r in raw_records:
                 buyer_str = str(r.get('buyer_name', '')).strip()
                 city_str = str(r.get('city', '')).strip()
-                matched_buyer, conf = match_party(buyer_str, city_str)
+                matched, conf = match_party(buyer_str, city_str)
                 r_copy = dict(r)
-                r_copy['matched_buyer_id'] = matched_buyer.id if matched_buyer else None
-                r_copy['matched_buyer_name'] = matched_buyer.company_name if matched_buyer else ''
+                if isinstance(matched, Contact):
+                    r_copy['matched_contact_id'] = matched.id
+                    r_copy['matched_buyer_id'] = matched.id
+                    r_copy['matched_buyer_name'] = matched.name
+                    r_copy['contact_code'] = matched.code
+                    r_copy['is_new_party'] = False
+                elif matched:
+                    r_copy['matched_contact_id'] = None
+                    r_copy['matched_buyer_id'] = matched.id
+                    r_copy['matched_buyer_name'] = getattr(matched, 'company_name', getattr(matched, 'name', ''))
+                    r_copy['contact_code'] = ''
+                    r_copy['is_new_party'] = False
+                else:
+                    r_copy['matched_contact_id'] = None
+                    r_copy['matched_buyer_id'] = None
+                    r_copy['matched_buyer_name'] = ''
+                    r_copy['contact_code'] = ''
+                    r_copy['is_new_party'] = True
                 r_copy['match_confidence'] = conf
                 enriched_records.append(r_copy)
 
@@ -234,29 +268,41 @@ class SaveVerifiedRecordsView(views.APIView):
                 if not bill_no or not raw_buyer_str:
                     continue
 
-                # 1. Resolve Buyer: use buyer_id if provided, else company_name, else create new
-                buyer_obj = None
-                if buyer_id:
-                    buyer_obj = Buyer.objects.filter(id=buyer_id).first()
-
-                if not buyer_obj:
-                    buyer_obj = Buyer.objects.filter(company_name__iexact=raw_buyer_str).first()
-
-                if not buyer_obj:
-                    buyer_obj = Buyer.objects.create(
-                        company_name=raw_buyer_str,
-                        address=f"{city}, Gujarat" if city else "Gujarat",
-                        phone="9898000000",
-                        whatsapp="9898000000",
-                        email=f"contact@{raw_buyer_str.lower().replace(' ', '')[:10]}.in"
+                # 1. Resolve Contact (primary) and Buyer (fallback)
+                contact_obj = None
+                contact_id = row.get('contact_id') or row.get('matched_contact_id')
+                if contact_id:
+                    contact_obj = Contact.objects.filter(id=contact_id).first()
+                if not contact_obj and buyer_id:
+                    contact_obj = Contact.objects.filter(id=buyer_id).first()
+                if not contact_obj:
+                    alias = PartyAlias.objects.filter(raw_name__iexact=raw_buyer_str).select_related('contact').first()
+                    if alias and alias.contact:
+                        contact_obj = alias.contact
+                if not contact_obj:
+                    contact_obj = Contact.objects.filter(name__iexact=raw_buyer_str).first()
+                if not contact_obj:
+                    # Auto-create Contact in Contact Master
+                    b_count = Contact.objects.filter(party_type='BUYER').count()
+                    contact_obj = Contact.objects.create(
+                        party_type='BUYER',
+                        code=f"B{b_count + 1:04d}",
+                        name=raw_buyer_str,
+                        city=city or 'Gujarat',
+                        mobile_1='9898000000',
+                        credit_days=15
                     )
 
                 # 2. Save alias mapping so subsequent imports recognize this name
-                if raw_buyer_str and raw_buyer_str.lower() != buyer_obj.company_name.lower():
-                    PartyAlias.objects.get_or_create(
-                        raw_name=raw_buyer_str,
-                        defaults={'buyer': buyer_obj}
-                    )
+                PartyAlias.objects.get_or_create(
+                    raw_name=raw_buyer_str,
+                    defaults={'contact': contact_obj}
+                )
+
+                buyer_obj = Buyer.objects.filter(company_name__iexact=raw_buyer_str).first()
+                company_contact = statement.company_contact
+                if not company_contact and target_seller_id:
+                    company_contact = Contact.objects.filter(id=target_seller_id).first()
 
                 # Determine target: Sauda deals or recovery bills
                 stmt_type = statement.statement_type
@@ -330,15 +376,21 @@ class SaveVerifiedRecordsView(views.APIView):
                         skipped += 1
                         continue
 
-                    due_days = int(row.get('due_days', buyer_obj.credit_days or 15) or 15)
+                    due_days = int(row.get('due_days', contact_obj.credit_days if contact_obj else (buyer_obj.credit_days if buyer_obj else 15)) or 15)
+                    b_name = contact_obj.name if contact_obj else (buyer_obj.company_name if buyer_obj else raw_buyer_str)
+                    b_city = (contact_obj.city if contact_obj else (buyer_obj.address if buyer_obj else '')) or city
+                    b_phone = (contact_obj.mobile_1 or contact_obj.phone_office_1) if contact_obj else (buyer_obj.whatsapp or buyer_obj.phone if buyer_obj else '9898000000')
+
                     RecoveryRecord.objects.create(
                         statement=statement,
                         seller=seller,
                         seller_name=seller_name,
+                        company_contact=company_contact,
                         buyer=buyer_obj,
-                        buyer_name=buyer_obj.company_name,
-                        buyer_city=city,
-                        buyer_phone=buyer_obj.whatsapp or buyer_obj.phone,
+                        buyer_contact=contact_obj,
+                        buyer_name=b_name,
+                        buyer_city=b_city,
+                        buyer_phone=b_phone,
                         bill_number=bill_no,
                         bill_date=bill_date,
                         due_days=due_days,

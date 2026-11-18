@@ -450,6 +450,34 @@ def sync_deal_side_effects(deal):
     target.actual_quantity = Decimal(str(month_actual))
     target.save()
 
+    # 5. Recovery Bill auto-sync
+    try:
+        from recoveries.models import RecoveryRecord
+        is_deal_paid = (deal.delivery_payment_status == 'Done' or deal.delivery_status == 'Done' or deal.status in ['COMPLETED', 'DELIVERED'])
+        deal_balance = Decimal('0.00') if is_deal_paid else (deal.gross_amount or Decimal('0.00'))
+        deal_status = 'PAID' if is_deal_paid else 'PENDING'
+        
+        RecoveryRecord.objects.update_or_create(
+            deal=deal,
+            defaults={
+                'bill_number': deal.deal_number,
+                'bill_date': deal.date,
+                'company_contact': mill,
+                'seller_name': mill.name,
+                'buyer_contact': buyer,
+                'buyer_name': buyer.name,
+                'buyer_city': buyer.city or '',
+                'buyer_phone': buyer.mobile_1 or buyer.phone_office_1 or '',
+                'due_days': buyer.credit_days or 15,
+                'billed_amount': deal.gross_amount or Decimal('0.00'),
+                'balance_amount': deal_balance,
+                'status': deal_status,
+                'notes': f"{product.name} - {deal.quantity} {deal.quantity_unit} @ Rs {deal.rate}"
+            }
+        )
+    except Exception:
+        pass
+
     return {
         'mill_order_number': mill_order.order_number,
         'new_product_alert': is_new_mapping,

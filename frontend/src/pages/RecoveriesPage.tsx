@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IndianRupee,
   Search,
@@ -10,6 +10,7 @@ import {
   Building2,
   Calendar,
   MessageCircle,
+  Phone,
   PlusCircle,
   X,
   CreditCard,
@@ -18,157 +19,115 @@ import {
   Copy,
   Plus,
   Send,
-  ShieldAlert,
+  UploadCloud,
+  Check,
+  UserPlus,
+  Eye,
+  RefreshCw,
+  Layers,
+  ArrowRight,
+  ShieldCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { recoveriesApi } from '@/api/recoveries';
+import { recoveriesApi, PartyBalanceSummary } from '@/api/recoveries';
+import { contactsApi } from '@/api/contacts';
 import { apiClient } from '@/api/client';
-import { RecoveryRecord, PaymentReceipt, Seller, Buyer } from '@/types';
-import { cn } from '@/lib/utils';
+import { RecoveryRecord, Contact } from '@/types';
+import { cn, formatPrice } from '@/lib/utils';
 
 export const RecoveriesPage: React.FC = () => {
   const queryClient = useQueryClient();
+
+  // Active Tab: 'party_summary' (Company Balances), 'invoices' (All Bills), 'upload' (PDF Upload)
+  const [activeTab, setActiveTab] = useState<'party_summary' | 'invoices' | 'upload'>('party_summary');
+
+  // Search & Filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [companyFilter, setCompanyFilter] = useState<string>('ALL');
-  const [isOverdueOnly, setIsOverdueOnly] = useState<boolean>(false);
   const [agingFilter, setAgingFilter] = useState<string>('ALL'); // ALL, BUCKET_0_15, BUCKET_16_30, BUCKET_31_45, BUCKET_45_PLUS
+  const [overdueOnly, setOverdueOnly] = useState(false);
+
+  // Expanded Party for viewing bills
+  const [expandedPartyKey, setExpandedPartyKey] = useState<string | null>(null);
 
   // Modals state
+  const [selectedPartyForPayment, setSelectedPartyForPayment] = useState<PartyBalanceSummary | null>(null);
   const [selectedRecordForPayment, setSelectedRecordForPayment] = useState<RecoveryRecord | null>(null);
+  const [selectedPartyForCall, setSelectedPartyForCall] = useState<PartyBalanceSummary | null>(null);
   const [isManualAddOpen, setIsManualAddOpen] = useState(false);
 
+  // PDF Upload State
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadSellerId, setUploadSellerId] = useState<string>('');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractedResult, setExtractedResult] = useState<any | null>(null);
+  const [isApproving, setIsApproving] = useState(false);
 
+  // 1. Fetch Party-Wise Balance Summaries (Company Aggregate)
+  const {
+    data: partySummaries = [],
+    isLoading: isLoadingParties,
+    refetch: refetchParties,
+  } = useQuery({
+    queryKey: ['recoveries-party-summary'],
+    queryFn: () => recoveriesApi.getPartySummary(),
+  });
 
-  // Queries
-  const { data: recoveriesData, isLoading } = useQuery({
-    queryKey: ['recoveries', statusFilter, companyFilter, searchTerm],
+  // 2. Fetch All Invoices / Bills Register
+  const {
+    data: recoveriesData,
+    isLoading: isLoadingBills,
+    refetch: refetchBills,
+  } = useQuery({
+    queryKey: ['recoveries-bills', statusFilter, searchTerm],
     queryFn: () =>
       recoveriesApi.getRecoveries({
         status: statusFilter !== 'ALL' ? statusFilter : undefined,
-        seller: companyFilter !== 'ALL' ? companyFilter : undefined,
         search: searchTerm || undefined,
+        page_size: 500,
       }),
   });
 
+  // 3. Overall Recovery Stats
   const { data: stats } = useQuery({
     queryKey: ['recoveries-stats'],
     queryFn: () => recoveriesApi.getStats(),
   });
 
-  const { data: sellers } = useQuery({
-    queryKey: ['sellers-dropdown-rec'],
-    queryFn: async () => {
-      const res = await apiClient.get<any>('/sellers/');
-      return Array.isArray(res.data) ? res.data : (res.data.results as Seller[]);
-    },
+  // 4. Contacts Dropdown (Mills & Buyers from Contact Master)
+  const { data: contactsData } = useQuery({
+    queryKey: ['contacts-dropdown-for-recoveries'],
+    queryFn: () => contactsApi.getAllContactsList(),
   });
 
-  const { data: buyers } = useQuery({
-    queryKey: ['buyers-dropdown-rec'],
-    queryFn: async () => {
-      const res = await apiClient.get<any>('/buyers/');
-      return Array.isArray(res.data) ? res.data : (res.data.results as Buyer[]);
-    },
-  });
+  const millContacts = useMemo(
+    () => contactsData?.filter((c) => c.party_type === 'COMPANY_MILL' || c.party_type === ('SELLER' as any)) || [],
+    [contactsData]
+  );
+  const buyerContacts = useMemo(
+    () => contactsData?.filter((c) => c.party_type === 'BUYER') || [],
+    [contactsData]
+  );
 
   // Manual Add Form State
   const [manualForm, setManualForm] = useState({
-    buyer_id: '',
+    buyer_contact_id: '',
     buyer_name: '',
     buyer_city: '',
-    seller_id: '',
+    buyer_phone: '',
+    company_contact_id: '',
     seller_name: '',
     bill_number: '',
     bill_date: new Date().toISOString().split('T')[0],
     billed_amount: '',
     due_days: 15,
-    assigned_staff: 'Rajesh',
     notes: '',
   });
 
-  const handleBuyerSelect = (bId: string) => {
-    const b = buyers?.find((item: Buyer) => item.id.toString() === bId);
-    setManualForm((prev) => ({
-      ...prev,
-      buyer_id: bId,
-      buyer_name: b ? b.company_name : '',
-      buyer_city: b ? b.address.split(',')[0] || '' : prev.buyer_city,
-      due_days: b?.credit_days || 15,
-    }));
-  };
-
-  const handleSellerSelect = (sId: string) => {
-    const s = sellers?.find((item: Seller) => item.id.toString() === sId);
-    setManualForm((prev) => ({
-      ...prev,
-      seller_id: sId,
-      seller_name: s ? s.company_name : '',
-    }));
-  };
-
-  const handleSaveManualBill = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualForm.buyer_name) {
-      toast.error('કૃપા કરી બાયર પાર્ટીનું નામ પસંદ કરો અથવા ટાઈપ કરો.');
-      return;
-    }
-    if (!manualForm.seller_name && !manualForm.seller_id) {
-      toast.error('કૃપા કરી સેલર કંપની પસંદ કરો.');
-      return;
-    }
-    if (!manualForm.bill_number) {
-      toast.error('કૃપા કરી બિલ નંબર દાખલ કરો.');
-      return;
-    }
-    const amt = parseFloat(manualForm.billed_amount);
-    if (isNaN(amt) || amt <= 0) {
-      toast.error('કૃપા કરી યોગ્ય બાકી રકમ દાખલ કરો.');
-      return;
-    }
-
-    try {
-      await recoveriesApi.createRecovery({
-        buyer: manualForm.buyer_id ? Number(manualForm.buyer_id) : null,
-        buyer_name: manualForm.buyer_name,
-        buyer_city: manualForm.buyer_city,
-        seller: manualForm.seller_id ? Number(manualForm.seller_id) : null,
-        seller_name: manualForm.seller_name,
-        bill_number: manualForm.bill_number,
-        bill_date: manualForm.bill_date,
-        due_days: Number(manualForm.due_days) || 15,
-        billed_amount: amt,
-        balance_amount: amt,
-        assigned_staff: manualForm.assigned_staff || 'Rajesh',
-        notes: manualForm.notes,
-        status: 'PENDING',
-      });
-      toast.success(`✅ બિલ #${manualForm.bill_number} (${manualForm.buyer_name}) સફળતાપૂર્વક ઉમેરાઈ ગયું.`);
-      setIsManualAddOpen(false);
-      setManualForm({
-        buyer_id: '',
-        buyer_name: '',
-        buyer_city: '',
-        seller_id: '',
-        seller_name: '',
-        bill_number: '',
-        bill_date: new Date().toISOString().split('T')[0],
-        billed_amount: '',
-        due_days: 15,
-        assigned_staff: 'Rajesh',
-        notes: '',
-      });
-      queryClient.invalidateQueries({ queryKey: ['recoveries'] });
-      queryClient.invalidateQueries({ queryKey: ['recoveries-stats'] });
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'બિલ સેવ કરવામાં ભૂલ આવી.');
-    }
-  };
-
-  // Payment form state
+  // Payment Form State
   const [paymentForm, setPaymentForm] = useState({
-    amount: 0,
-    deductions_amount: 0,
+    amount: '',
+    deductions_amount: '',
     deduction_reason: '',
     payment_date: new Date().toISOString().split('T')[0],
     payment_mode: 'RTGS',
@@ -177,11 +136,13 @@ export const RecoveriesPage: React.FC = () => {
     notes: '',
   });
 
-  const handleOpenPayment = (rec: RecoveryRecord) => {
-    setSelectedRecordForPayment(rec);
+  // Handle Opening Payment for a Company
+  const handleOpenPartyPayment = (party: PartyBalanceSummary) => {
+    setSelectedPartyForPayment(party);
+    setSelectedRecordForPayment(null);
     setPaymentForm({
-      amount: Number(rec.balance_amount),
-      deductions_amount: 0,
+      amount: String(party.total_balance),
+      deductions_amount: '',
       deduction_reason: '',
       payment_date: new Date().toISOString().split('T')[0],
       payment_mode: 'RTGS',
@@ -191,629 +152,1109 @@ export const RecoveriesPage: React.FC = () => {
     });
   };
 
-  const handleRecordPayment = async (e: React.FormEvent) => {
+  // Handle Opening Payment for a Single Bill
+  const handleOpenBillPayment = (bill: RecoveryRecord) => {
+    setSelectedRecordForPayment(bill);
+    setSelectedPartyForPayment(null);
+    setPaymentForm({
+      amount: String(bill.balance_amount),
+      deductions_amount: '',
+      deduction_reason: '',
+      payment_date: new Date().toISOString().split('T')[0],
+      payment_mode: 'RTGS',
+      reference_number: '',
+      collected_by: '',
+      notes: '',
+    });
+  };
+
+  // Submit Payment (Allocates across bills or single bill)
+  const handleSubmitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRecordForPayment) return;
-    if (paymentForm.amount <= 0 && paymentForm.deductions_amount <= 0) {
-      toast.error('જમા રકમ અથવા કપાત 0 કરતા વધુ હોવી જોઈએ.');
+    const amt = parseFloat(paymentForm.amount || '0');
+    const ded = parseFloat(paymentForm.deductions_amount || '0');
+
+    if (amt <= 0 && ded <= 0) {
+      toast.error('કૃપા કરી જમા રકમ અથવા કપાત દાખલ કરો (Enter payment or deduction amount).');
       return;
     }
 
     try {
-      const res = await recoveriesApi.recordPayment(selectedRecordForPayment.id, paymentForm);
-      if (res.success) {
-        toast.success(res.message);
-        setSelectedRecordForPayment(null);
-        queryClient.invalidateQueries({ queryKey: ['recoveries'] });
-        queryClient.invalidateQueries({ queryKey: ['recoveries-stats'] });
+      if (selectedRecordForPayment) {
+        // Single Bill Payment
+        const res = await recoveriesApi.recordPayment(selectedRecordForPayment.id, {
+          amount: amt,
+          deductions_amount: ded,
+          deduction_reason: paymentForm.deduction_reason,
+          payment_date: paymentForm.payment_date,
+          payment_mode: paymentForm.payment_mode,
+          reference_number: paymentForm.reference_number,
+          collected_by: paymentForm.collected_by,
+          notes: paymentForm.notes,
+        });
+        toast.success(
+          `પેમેન્ટ ₹${amt.toLocaleString('en-IN')} જમા થયું! બાકી રકમ: ₹${res.new_balance.toLocaleString('en-IN')}`
+        );
+      } else if (selectedPartyForPayment) {
+        // Company Lump-Sum Allocation
+        const res = await recoveriesApi.allocatePayment({
+          buyer_contact_id: selectedPartyForPayment.buyer_contact_id || undefined,
+          buyer_id: selectedPartyForPayment.buyer_id || undefined,
+          buyer_name: selectedPartyForPayment.company_name,
+          amount: amt,
+          deductions_amount: ded,
+          deduction_reason: paymentForm.deduction_reason,
+          payment_date: paymentForm.payment_date,
+          payment_mode: paymentForm.payment_mode,
+          reference_number: paymentForm.reference_number,
+          collected_by: paymentForm.collected_by,
+          notes: paymentForm.notes,
+        });
+        toast.success(
+          `શ્રી ${selectedPartyForPayment.company_name} ના ખાતામાં ₹${amt.toLocaleString('en-IN')} જમા થયા!`
+        );
       }
+
+      // Close modal & refresh queries
+      setSelectedPartyForPayment(null);
+      setSelectedRecordForPayment(null);
+      queryClient.invalidateQueries({ queryKey: ['recoveries-party-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['recoveries-bills'] });
+      queryClient.invalidateQueries({ queryKey: ['recoveries-stats'] });
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'પેમેન્ટ નોંધવામાં ભૂલ આવી.');
+      toast.error(err.response?.data?.error || 'પેમેન્ટ સેવ કરવામાં ભૂલ આવી (Failed to record payment).');
     }
   };
 
+  // WhatsApp Reminder Generator & Sender
+  const handleSendWhatsApp = async (party: PartyBalanceSummary) => {
+    const rawPhone = party.phone || '9898000000';
+    const cleanPhone = rawPhone.replace(/[^\d]/g, '');
+    const phoneWithCode = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
-
-  // Consolidated WhatsApp Reminder for a whole party with all their bills
-  const handleSendConsolidatedWhatsApp = async (buyerId: number | null | undefined, buyerName: string, bills: RecoveryRecord[]) => {
-    const firstBill = bills[0];
-    const buyerObj = buyers?.find((b) => b.id === buyerId);
-    const phone = buyerObj?.whatsapp || buyerObj?.phone || firstBill.buyer_phone || '919898000000';
-    const cleanPhone = phone.replace(/[^\d]/g, '');
-
-    const totalBalance = bills.reduce((sum, b) => sum + Number(b.balance_amount || 0), 0);
-
-    const billsListText = bills
+    const billsListText = party.bills
+      .filter((b) => b.balance_amount > 0)
+      .slice(0, 5)
       .map(
         (b, i) =>
-          `${i + 1}. બિલ નં: *${b.bill_number}* (તારીખ: ${b.bill_date}) - મિલ: *${b.seller_name}* - બાકી: *₹ ${Number(b.balance_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}*`
+          `${i + 1}. બિલ નં: *${b.bill_number}* (તારીખ: ${b.bill_date}) - મિલ: *${b.seller_name}* - બાકી: *₹ ${b.balance_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}*`
       )
       .join('\n');
 
-    const msg = `જય જલારામ 🙏\n*જલારામ બ્રોકર્સ (JALARAM BROKERS)*\nતારીખ: ${new Date().toLocaleDateString('en-GB')}\n\nનમસ્તે શ્રી *${buyerName}*,\nઆપના ખાતાના નીચે મુજબના બિલની રકમ બાકી છે:\n\n${billsListText}\n\n---------------------------------\n*કુલ બાકી રકમ: ₹ ${totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}*\n---------------------------------\n\nકૃપા કરી સત્વરે RTGS / Cheque મારફતે મિલના ખાતામાં જમા કરાવી સ્લિપ મોકલી આપવા નમ્ર વિનંતી.\n\nઆભાર,\nજલારામ બ્રોકર્સ, આણંદ.`;
+    const msg = `જય જલારામ 🙏\n*જલારામ બ્રોકર્સ (JALARAM BROKERS, ANAND)*\nતારીખ: ${new Date().toLocaleDateString('en-GB')}\n\nનમસ્તે શ્રી *${party.company_name}*,\nઆપના ખાતાની પેમેન્ટ વિગત નીચે મુજબ છે:\n\n• કુલ બિલ રકમ: ₹ ${party.total_billed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n• જમા થયેલ રકમ: ₹ ${party.total_paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n---------------------------------\n*ચાલુ બાકી રકમ: ₹ ${party.total_balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}*\n---------------------------------\n${billsListText ? `બાકી બિલો:\n${billsListText}\n` : ''}\nકૃપા કરી સત્વરે RTGS / Cheque મારફતે મિલના ખાતામાં જમા કરાવી સ્લિપ મોકલી આપવા નમ્ર વિનંતી.\n\nઆભાર,\nજલારામ બ્રોકર્સ, આણંદ.`;
 
-    // Log reminder to backend
+    // Log reminder in backend
     try {
       await recoveriesApi.logReminder({
-        buyer_id: buyerId || undefined,
-        bill_ids: bills.map((b) => b.id),
+        buyer_id: party.buyer_contact_id || party.buyer_id || undefined,
+        bill_ids: party.bills.map((b) => b.id),
       });
-      queryClient.invalidateQueries({ queryKey: ['recoveries'] });
+      queryClient.invalidateQueries({ queryKey: ['recoveries-party-summary'] });
     } catch (e) {
-      // silent
+      // ignore
     }
 
-    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  const allRecords: RecoveryRecord[] = recoveriesData?.results || [];
-
-  // Filter bills by status, overdue, and aging bucket
-  const filteredRecords = allRecords.filter((rec) => {
-    if (isOverdueOnly && !rec.is_overdue) return false;
-
-    if (agingFilter !== 'ALL') {
-      const days = rec.overdue_days || 0;
-      if (agingFilter === 'BUCKET_0_15' && days > 15) return false;
-      if (agingFilter === 'BUCKET_16_30' && (days <= 15 || days > 30)) return false;
-      if (agingFilter === 'BUCKET_31_45' && (days <= 30 || days > 45)) return false;
-      if (agingFilter === 'BUCKET_45_PLUS' && days <= 45) return false;
+  // PDF Extraction Handler
+  const handleUploadPDF = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFile) {
+      toast.error('કૃપા કરી PDF ફાઇલ પસંદ કરો.');
+      return;
     }
 
-    return true;
-  });
+    try {
+      setIsExtracting(true);
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      if (uploadSellerId) {
+        formData.append('seller_id', uploadSellerId);
+        formData.append('company_contact_id', uploadSellerId);
+      }
 
-  // Group bills strictly by Party ID (with fallback to cleaned Name)
-  const partyGroups: Record<string, RecoveryRecord[]> = {};
-  const partyOrder: string[] = [];
-
-  filteredRecords.forEach((item) => {
-    const key = item.buyer ? `buyer-${item.buyer}` : `name-${(item.buyer_name || '').trim().toLowerCase()}`;
-    if (!partyGroups[key]) {
-      partyGroups[key] = [];
-      partyOrder.push(key);
+      const res = await recoveriesApi.uploadStatement(formData);
+      setExtractedResult(res);
+      toast.success(`PDF સફળતાપૂર્વક વંચાઈ ગઈ! ${res.records_count} રેકોર્ડ્સ મળ્યા.`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'PDF વાંચવામાં ભૂલ આવી.');
+    } finally {
+      setIsExtracting(false);
     }
-    partyGroups[key].push(item);
-  });
+  };
+
+  // Approve Extracted PDF to Live Database
+  const handleApproveExtracted = async () => {
+    if (!extractedResult || !extractedResult.statement_id) return;
+    try {
+      setIsApproving(true);
+      const res = await recoveriesApi.saveVerifiedRecords(extractedResult.statement_id, {
+        records: extractedResult.records,
+        target: 'RECOVERIES',
+        seller_id: uploadSellerId || extractedResult.seller_id,
+      });
+      toast.success(res.message || 'રેકોર્ડ્સ સફળતાપૂર્વક આયાત થઈ ગયા!');
+      setExtractedResult(null);
+      setUploadFile(null);
+      setActiveTab('party_summary');
+      queryClient.invalidateQueries({ queryKey: ['recoveries-party-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['recoveries-bills'] });
+      queryClient.invalidateQueries({ queryKey: ['recoveries-stats'] });
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'ડેટા સેવ કરવામાં ભૂલ આવી.');
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  // Handle Manual Bill Creation
+  const handleSaveManualBill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualForm.buyer_name) {
+      toast.error('કૃપા કરી બાયર કંપનીનું નામ પસંદ કરો.');
+      return;
+    }
+    if (!manualForm.bill_number) {
+      toast.error('કૃપા કરી બિલ નંબર દાખલ કરો.');
+      return;
+    }
+    const amt = parseFloat(manualForm.billed_amount || '0');
+    if (amt <= 0) {
+      toast.error('બિલની રકમ શૂન્ય કરતાં વધુ હોવી જોઈએ.');
+      return;
+    }
+
+    try {
+      await recoveriesApi.createRecovery({
+        buyer_contact: manualForm.buyer_contact_id ? Number(manualForm.buyer_contact_id) : undefined,
+        buyer_name: manualForm.buyer_name,
+        buyer_city: manualForm.buyer_city,
+        buyer_phone: manualForm.buyer_phone,
+        company_contact: manualForm.company_contact_id ? Number(manualForm.company_contact_id) : undefined,
+        seller_name: manualForm.seller_name || 'Mill Partner',
+        bill_number: manualForm.bill_number,
+        bill_date: manualForm.bill_date,
+        due_days: Number(manualForm.due_days) || 15,
+        billed_amount: amt as any,
+        balance_amount: amt as any,
+        status: 'PENDING',
+        notes: manualForm.notes,
+      });
+
+      toast.success(`બિલ નં ${manualForm.bill_number} (₹${amt.toLocaleString('en-IN')}) ઉમેરાઈ ગયું!`);
+      setIsManualAddOpen(false);
+      setManualForm({
+        buyer_contact_id: '',
+        buyer_name: '',
+        buyer_city: '',
+        buyer_phone: '',
+        company_contact_id: '',
+        seller_name: '',
+        bill_number: '',
+        bill_date: new Date().toISOString().split('T')[0],
+        billed_amount: '',
+        due_days: 15,
+        notes: '',
+      });
+      queryClient.invalidateQueries({ queryKey: ['recoveries-party-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['recoveries-bills'] });
+      queryClient.invalidateQueries({ queryKey: ['recoveries-stats'] });
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'બિલ ઉમેરવામાં ભૂલ આવી.');
+    }
+  };
+
+  // Filtered party summaries
+  const filteredParties = useMemo(() => {
+    return partySummaries.filter((p) => {
+      if (overdueOnly && p.max_overdue_days <= 15) return false;
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase();
+        return (
+          p.company_name.toLowerCase().includes(q) ||
+          p.city.toLowerCase().includes(q) ||
+          p.phone.includes(q)
+        );
+      }
+      return true;
+    });
+  }, [partySummaries, searchTerm, overdueOnly]);
+
+  // Filtered individual bills
+  const allBills: RecoveryRecord[] = recoveriesData?.results || [];
+  const filteredBills = useMemo(() => {
+    return allBills.filter((rec) => {
+      if (overdueOnly && !rec.is_overdue) return false;
+      if (agingFilter !== 'ALL') {
+        const days = rec.overdue_days || 0;
+        if (agingFilter === 'BUCKET_0_15' && days > 15) return false;
+        if (agingFilter === 'BUCKET_16_30' && (days <= 15 || days > 30)) return false;
+        if (agingFilter === 'BUCKET_31_45' && (days <= 30 || days > 45)) return false;
+        if (agingFilter === 'BUCKET_45_PLUS' && days <= 45) return false;
+      }
+      return true;
+    });
+  }, [allBills, overdueOnly, agingFilter]);
 
   return (
     <div className="space-y-6">
-      {/* Top Banner & Header */}
+      {/* ======================================================== */}
+      {/* Page Header */}
+      {/* ======================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-              રિકવરી લેજર અને બાકી હિસાબ (Recovery Ledger)
+            <h1 className="text-2xl font-bold font-heading text-slate-900">
+              પેમેન્ટ ઉઘરાણી (Payment Recovery & Follow-up)
             </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-800 rounded-full">
-              દૈનિક ઉઘરાણી ખાતાવહી
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-800 border border-amber-300">
+              Live Ledger
             </span>
           </div>
-          <p className="text-sm text-slate-500 mt-0.5">
-            જલારામ બ્રોકર્સ - પાર્ટી ID લિન્કિંગ, એકસાથે પેમેન્ટ જમા, સિંગલ કન્સોલિડેટેડ WhatsApp રીમાઇન્ડર અને એજિંગ બકેટ
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            કંપનીવાર બાકી પેમેન્ટ, સ્ટેટમેન્ટ PDF અપલોડ, પેમેન્ટ જમા અને વોટ્સએપ/કોલ ફોલો-અપ
           </p>
         </div>
 
+        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+          <button
+            onClick={() => setActiveTab('upload')}
+            className="px-3.5 py-2.5 bg-[#0B3B24] hover:bg-[#124b30] text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <UploadCloud size={16} />
+            <span>સ્ટેટમેન્ટ PDF અપલોડ (Upload PDF)</span>
+          </button>
+          <button
+            onClick={() => setIsManualAddOpen(true)}
+            className="px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <Plus size={15} />
+            <span>+ નવું બિલ ઉમેરો (Add Bill)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* KPI Stats Cards */}
+      {/* ======================================================== */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="bg-white rounded-2xl border border-rose-200 bg-rose-50/20 p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-xs font-semibold text-rose-800 uppercase">
+            <span>કુલ બાકી રકમ (Outstanding)</span>
+            <AlertTriangle size={16} className="text-rose-600" />
+          </div>
+          <p className="text-2xl font-black text-rose-900 mt-1">
+            ₹ {(stats?.total_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-[11px] text-rose-700 mt-1 font-medium">
+            {stats?.pending_count || 0} બાકી બિલો ({partySummaries.filter((p) => p.total_balance > 0).length} પાર્ટીઓ)
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-emerald-200 bg-emerald-50/20 p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 uppercase">
+            <span>કુલ જમા / વસૂલાત (Collected)</span>
+            <CheckCircle2 size={16} className="text-emerald-600" />
+          </div>
+          <p className="text-2xl font-black text-emerald-900 mt-1">
+            ₹ {(stats?.total_collected || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-[11px] text-emerald-700 mt-1 font-medium">
+            {stats?.paid_count || 0} બિલો સંપૂર્ણ ચૂકતે (Paid)
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-600 uppercase">
+            <span>કુલ બિલ રકમ (Total Invoiced)</span>
+            <Receipt size={16} className="text-slate-500" />
+          </div>
+          <p className="text-2xl font-black text-slate-900 mt-1">
+            ₹ {(stats?.total_billed || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-[11px] text-slate-500 mt-1 font-medium">કુલ {stats?.total_bills || 0} બિલ નોંધાયા</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-amber-200 bg-amber-50/20 p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-xs font-semibold text-amber-800 uppercase">
+            <span>ઓવરડ્યુ રકમ (15+ Days Due)</span>
+            <Clock size={16} className="text-amber-600" />
+          </div>
+          <p className="text-2xl font-black text-amber-900 mt-1">
+            ₹ {(stats?.overdue_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-[11px] text-amber-800 mt-1 font-medium">
+            {stats?.overdue_count || 0} બિલો ક્રેડિટ મર્યાદા બહાર
+          </p>
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* Navigation Tabs */}
+      {/* ======================================================== */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
         <button
-          onClick={() => setIsManualAddOpen(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-sm rounded-xl shadow-xs transition-all shadow-amber-600/20 hover:shadow-md cursor-pointer"
+          onClick={() => setActiveTab('party_summary')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'party_summary'
+              ? 'bg-[#0B3B24] text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
         >
-          <Plus size={18} />
-          <span>મેન્યુઅલ રો ઉમેરો (Manual Add Bill)</span>
+          <Building2 size={15} />
+          <span>કંપનીવાર બાકી સારાંશ (Company Balances)</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 text-white font-mono">
+            {partySummaries.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('invoices')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'invoices'
+              ? 'bg-[#0B3B24] text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <FileText size={15} />
+          <span>તમામ બિલ રજીસ્ટર (All Invoices)</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 text-white font-mono">
+            {allBills.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('upload')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'upload'
+              ? 'bg-[#0B3B24] text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <UploadCloud size={15} />
+          <span>સ્ટેટમેન્ટ PDF અપલોડ (PDF Statement Extractor)</span>
         </button>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              કુલ બાકી ઉધારી (Total Balance)
-            </p>
-            <p className="text-2xl font-bold text-amber-600 mt-1">
-              ₹{(stats?.total_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-            </p>
-            <p className="text-xs text-slate-400 mt-1">
-              {stats?.pending_count || 0} પેન્ડિંગ • {stats?.partial_count || 0} અંશતઃ ચૂકવેલ
-            </p>
+      {/* ======================================================== */}
+      {/* TAB 1: Company Outstanding Balances (Main requirement)   */}
+      {/* ======================================================== */}
+      {activeTab === 'party_summary' && (
+        <div className="space-y-4">
+          {/* Search & Filter Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="કંપની / વેપારી શોધો (e.g. ABC, Ami, Patel)..."
+                className="w-full pl-10 pr-4 py-2 text-xs font-semibold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B3B24]/20 shadow-2xs"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setOverdueOnly(!overdueOnly)}
+                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                  overdueOnly
+                    ? 'bg-rose-50 text-rose-800 border-rose-300 shadow-2xs'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <AlertTriangle size={14} className={overdueOnly ? 'text-rose-600' : 'text-slate-400'} />
+                <span>માત્ર ઓવરડ્યુ (Overdue Only)</span>
+              </button>
+
+              <button
+                onClick={() => refetchParties()}
+                className="p-2 bg-white text-slate-500 hover:text-slate-800 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
+                title="Refresh"
+              >
+                <RefreshCw size={15} className={isLoadingParties ? 'animate-spin' : ''} />
+              </button>
+            </div>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-            <IndianRupee size={24} />
-          </div>
-        </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              કુલ જમા થયેલ (Recovered)
-            </p>
-            <p className="text-2xl font-bold text-emerald-700 mt-1">
-              ₹{(stats?.total_collected || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-            </p>
-            <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-              <CheckCircle2 size={12} /> {stats?.paid_count || 0} બિલો સંપૂર્ણ ચૂકતે થયા
-            </p>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <Receipt size={24} />
-          </div>
-        </div>
-
-        {/* Clickable Overdue Card */}
-        <div
-          onClick={() => {
-            setIsOverdueOnly(!isOverdueOnly);
-            if (!isOverdueOnly) {
-              setAgingFilter('ALL');
-            }
-          }}
-          className={cn(
-            'p-5 rounded-2xl border shadow-xs flex items-center justify-between cursor-pointer transition-all',
-            isOverdueOnly
-              ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-400'
-              : 'bg-white border-slate-200/80 hover:border-rose-200'
-          )}
-        >
-          <div>
-            <p className="text-xs font-semibold text-rose-600 uppercase tracking-wider flex items-center gap-1">
-              <AlertTriangle size={13} />
-              <span>ડ્યૂ થયેલી ઉધારી (Overdue Bills)</span>
-            </p>
-            <p className="text-2xl font-bold text-rose-700 mt-1">
-              ₹{(stats?.overdue_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-            </p>
-            <p className="text-xs text-rose-600 font-medium mt-1">
-              {stats?.overdue_count || 0} બિલો ક્રેડિટ લિમિટ ઓળંગી ગયા • ક્લિક કરો
-            </p>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center">
-            <Clock size={24} />
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              સક્રિય પાર્ટીઓ (Parties in Ledger)
-            </p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">{partyOrder.length}</p>
-            <p className="text-xs text-slate-400 mt-1">ID લિન્ક્ડ અને ખાતાવહી ગ્રુપિંગ</p>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-            <Building2 size={24} />
-          </div>
-        </div>
-      </div>
-
-      {/* Aging Buckets Filter Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mr-1">Aging Buckets:</span>
-          <button
-            onClick={() => {
-              setAgingFilter('ALL');
-              setIsOverdueOnly(false);
-            }}
-            className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer',
-              agingFilter === 'ALL' && !isOverdueOnly
-                ? 'bg-slate-900 text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            )}
-          >
-            All Aging
-          </button>
-          <button
-            onClick={() => {
-              setAgingFilter('BUCKET_0_15');
-              setIsOverdueOnly(false);
-            }}
-            className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer',
-              agingFilter === 'BUCKET_0_15'
-                ? 'bg-emerald-700 text-white'
-                : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-            )}
-          >
-            0–15 Days (તાજા બિલ)
-          </button>
-          <button
-            onClick={() => {
-              setAgingFilter('BUCKET_16_30');
-              setIsOverdueOnly(false);
-            }}
-            className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer',
-              agingFilter === 'BUCKET_16_30'
-                ? 'bg-amber-600 text-white'
-                : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-            )}
-          >
-            16–30 Days (ડ્યૂ લિસ્ટ)
-          </button>
-          <button
-            onClick={() => {
-              setAgingFilter('BUCKET_31_45');
-              setIsOverdueOnly(false);
-            }}
-            className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer',
-              agingFilter === 'BUCKET_31_45'
-                ? 'bg-orange-600 text-white'
-                : 'bg-orange-50 text-orange-800 hover:bg-orange-100'
-            )}
-          >
-            31–45 Days (ઉઘરાણી યાદી)
-          </button>
-          <button
-            onClick={() => {
-              setAgingFilter('BUCKET_45_PLUS');
-              setIsOverdueOnly(false);
-            }}
-            className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer',
-              agingFilter === 'BUCKET_45_PLUS'
-                ? 'bg-rose-700 text-white'
-                : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
-            )}
-          >
-            45+ Days (તાત્કાલિક ઉઘરાણી)
-          </button>
-        </div>
-
-        {/* Search Input */}
-        <div className="relative w-full sm:w-64">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search party, bill, mill..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500"
-          />
-        </div>
-      </div>
-
-      {/* Recovery Ledger Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm border-collapse">
-            <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200/80 text-xs font-semibold text-slate-600">
-                <th className="py-3.5 px-4">બાયર પાર્ટી / શહેર (Buyer & Place)</th>
-                <th className="py-3.5 px-4">સેલર મિલ (Seller Company)</th>
-                <th className="py-3.5 px-4">બિલ નંબર & તારીખ (Bill # & Date)</th>
-                <th className="py-3.5 px-4 text-right">બિલ રકમ (Billed ₹)</th>
-                <th className="py-3.5 px-4 text-right font-bold">બાકી રકમ (Balance ₹)</th>
-                <th className="py-3.5 px-4 text-center">ઉધારી દિવસો (Aging)</th>
-                <th className="py-3.5 px-4 text-center">સ્ટેટસ (Status)</th>
-                <th className="py-3.5 px-4 text-center">એક્શન (Actions)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
-                    <div className="w-8 h-8 border-3 border-amber-500/20 border-t-amber-600 rounded-full animate-spin mx-auto mb-2" />
-                    રિકવરી રેકોર્ડ્સ લોડ થઈ રહ્યા છે...
-                  </td>
-                </tr>
-              ) : partyOrder.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
-                    <IndianRupee size={36} className="mx-auto text-slate-300 mb-2" />
-                    <p className="font-semibold text-slate-700">કોઈ બાકી રિકવરી રેકોર્ડ મળ્યો નથી</p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      ઉપરથી "મેન્યુઅલ રો ઉમેરો" અથવા સ્ટેટમેન્ટ PDF અપલોડ કરી ડેટા લાવો.
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                partyOrder.map((key) => {
-                  const bills = partyGroups[key];
-                  const partyTotalBalance = bills.reduce((sum, b) => sum + Number(b.balance_amount || 0), 0);
-                  const firstBill = bills[0];
-                  const buyerObj = buyers?.find((b) => b.id === firstBill.buyer);
-
-                  const partyDisplayName = buyerObj ? buyerObj.company_name : firstBill.buyer_name;
-                  const partyCity = firstBill.buyer_city || (buyerObj ? buyerObj.address.split(',')[0] : '');
-                  const creditDays = buyerObj?.credit_days || firstBill.due_days || 15;
-
-                  return (
-                    <React.Fragment key={key}>
-                      {/* Party Header Banner */}
-                      <tr className="bg-slate-100/70 border-t-2 border-slate-300">
-                        <td colSpan={8} className="py-2.5 px-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-900 text-sm">{partyDisplayName}</span>
-                              {partyCity && (
-                                <span className="text-[11px] font-medium bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md">
-                                  {partyCity}
-                                </span>
-                              )}
-                              {firstBill.buyer && (
-                                <span className="text-[10px] font-mono bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
-                                  ID #{firstBill.buyer}
-                                </span>
-                              )}
-                              <span className="text-[11px] text-slate-500 font-medium">
-                                Credit: {creditDays} Days
-                              </span>
-                              {firstBill.reminder_count ? (
-                                <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded-full">
-                                  Sent {firstBill.reminder_count}x
-                                </span>
-                              ) : null}
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              {/* 1-Click Consolidated WhatsApp for all bills */}
-                              {partyTotalBalance > 0 && (
-                                <button
-                                  onClick={() => handleSendConsolidatedWhatsApp(firstBill.buyer, partyDisplayName, bills)}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-2xs transition-colors"
-                                  title="બધા બાકી બિલોનો એક જ સહિયારો WhatsApp મેસેજ મોકલો"
-                                >
-                                  <MessageCircle size={13} />
-                                  <span>કન્સોલિડેટેડ WhatsApp ({bills.length})</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
+          {/* Party Balance Summary Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-subtle overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                    <th className="py-3 px-4 sm:px-6">કંપની / વેપારી (Party Name)</th>
+                    <th className="py-3 px-4 text-right">કુલ બિલ (Invoiced)</th>
+                    <th className="py-3 px-4 text-right">જમા થયેલ (Paid)</th>
+                    <th className="py-3 px-4 text-right">ચાલુ બાકી રકમ (Balance Due)</th>
+                    <th className="py-3 px-4 text-center">બિલો (Bills)</th>
+                    <th className="py-3 px-4 text-center">ઓવરડ્યુ (Aging)</th>
+                    <th className="py-3 px-4 text-center">ફોલો-અપ / ક્રિયાઓ (Follow-up)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {isLoadingParties ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i} className="animate-pulse">
+                        <td colSpan={7} className="py-4 px-6">
+                          <div className="h-5 bg-slate-200 rounded w-full" />
                         </td>
                       </tr>
+                    ))
+                  ) : filteredParties.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-slate-400">
+                        <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2">
+                          <Building2 size={24} />
+                        </div>
+                        <p className="text-sm font-bold text-slate-700">કોઈ બાકી પાર્ટી મળી નથી</p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          સ્ટેટમેન્ટ PDF અપલોડ કરો અથવા નવું બિલ ઉમેરો.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredParties.map((party) => {
+                      const isExpanded = expandedPartyKey === party.party_key;
+                      const hasBalance = party.total_balance > 0;
 
-                      {/* Individual Bills Rows */}
-                      {bills.map((rec) => {
-                        const isOld = rec.is_overdue;
-                        return (
+                      return (
+                        <React.Fragment key={party.party_key}>
                           <tr
-                            key={rec.id}
-                            className={cn(
-                              'hover:bg-slate-50/80 transition-colors',
-                              isOld && 'bg-rose-50/40'
-                            )}
+                            className={`hover:bg-slate-50/80 transition-colors ${
+                              isExpanded ? 'bg-emerald-50/30' : ''
+                            }`}
                           >
-                            <td className="py-3 px-4 pl-8">
-                              <div className="text-xs font-medium text-slate-700">
-                                {rec.notes || 'Cattle Feed / Oil Cake Bill'}
+                            {/* Company Name & City */}
+                            <td className="py-3 px-4 sm:px-6 whitespace-nowrap">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                                    hasBalance
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  }`}
+                                >
+                                  {party.company_name.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <p className="font-bold text-slate-900 text-sm">
+                                    {party.company_name}
+                                  </p>
+                                  <p className="text-[11px] text-slate-400 flex items-center gap-2">
+                                    {party.city && <span>{party.city}</span>}
+                                    {party.phone && <span>• 📞 {party.phone}</span>}
+                                  </p>
+                                </div>
                               </div>
                             </td>
 
-                            <td className="py-3 px-4 text-xs font-medium text-amber-900">
-                              <div className="flex items-center gap-1.5">
-                                <Building2 size={13} className="text-amber-600/70 shrink-0" />
-                                <span>{rec.seller_name}</span>
-                              </div>
+                            {/* Total Billed */}
+                            <td className="py-3 px-4 text-right font-mono font-semibold text-slate-700 whitespace-nowrap">
+                              ₹ {party.total_billed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
 
-                            <td className="py-3 px-4 text-xs text-slate-700">
-                              <span className="font-mono font-semibold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded">
-                                {rec.bill_number}
-                              </span>
-                              <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
-                                <Calendar size={11} />
-                                {rec.bill_date}
-                              </div>
+                            {/* Total Paid */}
+                            <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-700 whitespace-nowrap">
+                              ₹ {party.total_paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
 
-                            <td className="py-3 px-4 text-right text-xs text-slate-600">
-                              ₹{Number(rec.billed_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-
-                            <td className="py-3 px-4 text-right">
+                            {/* Current Outstanding Balance (Bold prominent highlight) */}
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
                               <span
-                                className={cn(
-                                  'font-bold text-sm',
-                                  Number(rec.balance_amount) <= 0
-                                    ? 'text-emerald-700'
-                                    : isOld
-                                    ? 'text-rose-700'
-                                    : 'text-amber-700'
-                                )}
+                                className={`inline-block px-3 py-1 rounded-xl font-mono font-black text-sm ${
+                                  hasBalance
+                                    ? 'bg-rose-100 text-rose-900 border border-rose-300'
+                                    : 'bg-emerald-50 text-emerald-800'
+                                }`}
                               >
-                                ₹{Number(rec.balance_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                ₹ {party.total_balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </span>
                             </td>
 
-                            <td className="py-3 px-4 text-center">
-                              <span
-                                className={cn(
-                                  'text-xs font-semibold px-2 py-0.5 rounded-full',
-                                  isOld
-                                    ? 'bg-rose-100 text-rose-800 font-bold'
-                                    : (rec.overdue_days || 0) >= 15
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-slate-100 text-slate-600'
-                                )}
+                            {/* Pending Bills count */}
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              <button
+                                onClick={() =>
+                                  setExpandedPartyKey(isExpanded ? null : party.party_key)
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                               >
-                                {rec.overdue_days || 0} દિવસ {isOld ? '⚠️' : ''}
-                              </span>
+                                <span>{party.pending_bills_count} Bills</span>
+                                <Eye size={12} />
+                              </button>
                             </td>
 
-                            <td className="py-3 px-4 text-center">
-                              <span
-                                className={cn(
-                                  'text-xs font-bold px-2 py-0.5 rounded-full',
-                                  rec.status === 'PAID' && 'bg-emerald-100 text-emerald-800',
-                                  rec.status === 'PARTIAL' && 'bg-amber-100 text-amber-800',
-                                  rec.status === 'PENDING' && 'bg-slate-100 text-slate-700'
-                                )}
-                              >
-                                {rec.status === 'PAID'
-                                  ? 'ચૂકતે થયેલ'
-                                  : rec.status === 'PARTIAL'
-                                  ? 'અંશતઃ'
-                                  : 'બાકી'}
-                              </span>
+                            {/* Aging Overdue Days */}
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              {party.max_overdue_days > 0 ? (
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                    party.max_overdue_days > 30
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                      : party.max_overdue_days > 15
+                                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  {party.max_overdue_days} days
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-medium">On Time</span>
+                              )}
                             </td>
 
-                            <td className="py-3 px-4 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                {Number(rec.balance_amount) > 0 && (
-                                  <button
-                                    onClick={() => handleOpenPayment(rec)}
-                                    title="પેમેન્ટ નોંધો (Record Payment)"
-                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                                  >
-                                    <CreditCard size={13} />
-                                    <span>પેમેન્ટ</span>
-                                  </button>
-                                )}
+                            {/* Actions: WhatsApp, Call, Record Payment */}
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1.5">
+                                {/* WhatsApp Message Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendWhatsApp(party)}
+                                  className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                                  title="Send WhatsApp Payment Reminder"
+                                >
+                                  <MessageCircle size={14} />
+                                  <span>WhatsApp</span>
+                                </button>
+
+                                {/* Phone Call Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedPartyForCall(party)}
+                                  className="p-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 transition-all cursor-pointer"
+                                  title={`Call ${party.company_name}`}
+                                >
+                                  <Phone size={14} />
+                                </button>
+
+                                {/* Record Payment Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPartyPayment(party)}
+                                  className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-[#062616] font-bold text-xs flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                                  title="Record Payment / Credit Amount"
+                                >
+                                  <CreditCard size={13} />
+                                  <span>+ Pay</span>
+                                </button>
                               </div>
                             </td>
                           </tr>
-                        );
-                      })}
 
-                      {/* Subtotal row when party has multiple bills */}
-                      {bills.length > 1 && (
-                        <tr className="border-b-2 border-amber-300 bg-amber-50/80">
-                          <td className="py-2.5 px-4 font-bold text-slate-800 pl-8" colSpan={4}>
-                            <span className="flex items-center gap-1.5">
-                              <span>🧮</span>
-                              <span>{partyDisplayName} - કુલ ખાતા બાકી ({bills.length} બિલો)</span>
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-4 text-right font-black text-amber-900 text-base">
-                            ₹{partyTotalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td colSpan={3} className="py-2.5 px-4 text-right"></td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                          {/* Expanded Bills breakdown for this company */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/70 border-b border-slate-200">
+                              <td colSpan={7} className="p-4 pl-14">
+                                <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                                      <Receipt size={14} className="text-[#0B3B24]" />
+                                      <span>{party.company_name} ના બાકી બિલોની યાદી ({party.bills.length} Bills)</span>
+                                    </h4>
+                                    <span className="text-[11px] text-slate-500">
+                                      કુલ બાકી: <strong>₹ {party.total_balance.toLocaleString('en-IN')}</strong>
+                                    </span>
+                                  </div>
+
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-[11px] text-left">
+                                      <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
+                                        <tr>
+                                          <th className="py-2 px-3">બિલ નંબર</th>
+                                          <th className="py-2 px-3">તારીખ</th>
+                                          <th className="py-2 px-3">મિલ / સપ્લાયર</th>
+                                          <th className="py-2 px-3 text-right">બિલ રકમ</th>
+                                          <th className="py-2 px-3 text-right">જમા રકમ</th>
+                                          <th className="py-2 px-3 text-right">બાકી રકમ</th>
+                                          <th className="py-2 px-3 text-center">સ્થિતિ</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {party.bills.map((b) => (
+                                          <tr key={b.id} className="hover:bg-slate-50">
+                                            <td className="py-2 px-3 font-bold text-slate-900">{b.bill_number}</td>
+                                            <td className="py-2 px-3 text-slate-600 font-mono">{b.bill_date}</td>
+                                            <td className="py-2 px-3 text-slate-700">{b.seller_name}</td>
+                                            <td className="py-2 px-3 text-right font-mono text-slate-700">₹ {b.billed_amount.toLocaleString('en-IN')}</td>
+                                            <td className="py-2 px-3 text-right font-mono text-emerald-700">₹ {b.paid_amount.toLocaleString('en-IN')}</td>
+                                            <td className="py-2 px-3 text-right font-mono font-bold text-rose-800">₹ {b.balance_amount.toLocaleString('en-IN')}</td>
+                                            <td className="py-2 px-3 text-center">
+                                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                b.status === 'PAID'
+                                                  ? 'bg-emerald-100 text-emerald-800'
+                                                  : b.status === 'PARTIAL'
+                                                  ? 'bg-amber-100 text-amber-800'
+                                                  : 'bg-rose-100 text-rose-800'
+                                              }`}>
+                                                {b.status}
+                                              </span>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
+      {/* ======================================================== */}
+      {/* TAB 2: All Invoices Register                              */}
+      {/* ======================================================== */}
+      {activeTab === 'invoices' && (
+        <div className="space-y-4">
+          {/* Controls Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="બિલ નં, કંપની અથવા મિલ શોધો..."
+                className="w-full pl-10 pr-4 py-2 text-xs font-semibold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B3B24]/20 shadow-2xs"
+              />
+            </div>
 
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700"
+              >
+                <option value="ALL">બધી સ્થિતિ (All Status)</option>
+                <option value="PENDING">Pending (બાકી)</option>
+                <option value="PARTIAL">Partial (અંશતઃ ચૂકવેલ)</option>
+                <option value="PAID">Paid (ચૂકતે)</option>
+              </select>
 
-      {/* Single Bill Record Payment Modal */}
-      {selectedRecordForPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden my-6">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-emerald-50/50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                  <CreditCard size={22} />
-                </div>
+              <select
+                value={agingFilter}
+                onChange={(e) => setAgingFilter(e.target.value)}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700"
+              >
+                <option value="ALL">બધો સમયગાળો (All Aging)</option>
+                <option value="BUCKET_0_15">0 - 15 Days</option>
+                <option value="BUCKET_16_30">16 - 30 Days</option>
+                <option value="BUCKET_31_45">31 - 45 Days</option>
+                <option value="BUCKET_45_PLUS">45+ Days (Critical)</option>
+              </select>
+
+              <button
+                onClick={() => refetchBills()}
+                className="p-2 bg-white text-slate-500 hover:text-slate-800 border border-slate-200 rounded-xl hover:bg-slate-50"
+              >
+                <RefreshCw size={15} className={isLoadingBills ? 'animate-spin' : ''} />
+              </button>
+            </div>
+          </div>
+
+          {/* Individual Bills Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-subtle overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                    <th className="py-3 px-4">બિલ નંબર</th>
+                    <th className="py-3 px-4">તારીખ</th>
+                    <th className="py-3 px-4">બાયર / કંપની</th>
+                    <th className="py-3 px-4">મિલ / સપ્લાયર</th>
+                    <th className="py-3 px-4 text-right">ઓરિજિનલ રકમ</th>
+                    <th className="py-3 px-4 text-right">બાકી રકમ</th>
+                    <th className="py-3 px-4 text-center">સ્થિતિ</th>
+                    <th className="py-3 px-4 text-center">ક્રિયાઓ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {isLoadingBills ? (
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <tr key={i} className="animate-pulse">
+                        <td colSpan={8} className="py-4 px-6">
+                          <div className="h-5 bg-slate-200 rounded w-full" />
+                        </td>
+                      </tr>
+                    ))
+                  ) : filteredBills.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-slate-400">
+                        કોઈ બિલ મળ્યા નથી.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredBills.map((bill) => (
+                      <tr key={bill.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">
+                          {bill.bill_number}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap">
+                          {bill.bill_date}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <p className="font-bold text-slate-900">{bill.buyer_name}</p>
+                          {bill.buyer_city && (
+                            <p className="text-[11px] text-slate-400">{bill.buyer_city}</p>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 whitespace-nowrap">
+                          {bill.seller_name}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-700 whitespace-nowrap">
+                          ₹ {Number(bill.billed_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-rose-800 whitespace-nowrap">
+                          ₹ {Number(bill.balance_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              bill.status === 'PAID'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : bill.status === 'PARTIAL'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}
+                          >
+                            {bill.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenBillPayment(bill)}
+                            className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-[#062616] font-bold text-xs cursor-pointer"
+                          >
+                            + Pay Bill
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 3: Statement PDF Upload & Preview                      */}
+      {/* ======================================================== */}
+      {activeTab === 'upload' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-6 shadow-subtle">
+          <div className="border-b border-slate-100 pb-4">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <UploadCloud size={20} className="text-[#0B3B24]" />
+              <span>સ્ટેટમેન્ટ PDF અપલોડ કરો (Upload Statement PDF)</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              મિલ અથવા કંપનીનું લેજર / આઉટસ્ટેન્ડિંગ PDF અપલોડ કરો. સિસ્ટમ આપમેળે કંપનીઓને જોડી દેશે અને નવી કંપનીઓ લિસ્ટમાં ઉમેરશે.
+            </p>
+          </div>
+
+          {/* Upload Form */}
+          <form onSubmit={handleUploadPDF} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                સપ્લાયર મિલ / કંપની પસંદ કરો (Mill Partner)
+              </label>
+              <select
+                value={uploadSellerId}
+                onChange={(e) => setUploadSellerId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
+              >
+                <option value="">-- આપોઆપ શોધો (Auto-Detect from PDF Header) --</option>
+                {millContacts.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} {m.city ? `(${m.city})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                PDF ફાઇલ પસંદ કરો (Select Statement PDF) <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#0B3B24] file:text-white hover:file:bg-[#124b30] cursor-pointer"
+                required
+              />
+            </div>
+
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={isExtracting || !uploadFile}
+                className="w-full py-2.5 px-4 bg-[#0B3B24] hover:bg-[#124b30] text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer transition-all"
+              >
+                {isExtracting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>PDF વંચાઈ રહી છે...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud size={16} />
+                    <span>ડેટા ફેચ કરો (Extract & Analyze)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+
+          {/* Extracted Preview Table */}
+          {extractedResult && (
+            <div className="space-y-4 pt-4 border-t border-slate-200 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    બિલ પેમેન્ટ જમા કરો (Record Receipt)
+                  <h3 className="font-bold text-emerald-950 text-sm flex items-center gap-2">
+                    <CheckCircle2 size={18} className="text-emerald-700" />
+                    <span>
+                      ડેટા સફળતાપૂર્વક મળ્યો: {extractedResult.records_count} બિલ રેકોર્ડ્સ
+                    </span>
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    બિલ #{selectedRecordForPayment.bill_number} • {selectedRecordForPayment.buyer_name}
+                  <p className="text-xs text-emerald-800 mt-0.5">
+                    મિલ: <strong>{extractedResult.seller_name}</strong> • કુલ રકમ: ₹{' '}
+                    {extractedResult.total_amount?.toLocaleString('en-IN')}
                   </p>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleApproveExtracted}
+                  disabled={isApproving}
+                  className="px-5 py-2.5 bg-[#0B3B24] hover:bg-[#124b30] text-white font-bold text-xs rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  {isApproving ? (
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Check size={16} />
+                  )}
+                  <span>ઉઘરાણી રજીસ્ટરમાં સેવ કરો (Approve & Import)</span>
+                </button>
+              </div>
+
+              {/* Preview Table */}
+              <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                    <tr>
+                      <th className="py-2 px-3">બિલ નંબર</th>
+                      <th className="py-2 px-3">તારીખ</th>
+                      <th className="py-2 px-3">પાર્ટીનું નામ (PDF)</th>
+                      <th className="py-2 px-3">સિસ્ટમ મેચિંગ (Contact Master)</th>
+                      <th className="py-2 px-3">શહેર</th>
+                      <th className="py-2 px-3 text-right">બિલ રકમ (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {extractedResult.records?.map((row: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="py-2 px-3 font-bold text-slate-900">{row.bill_number}</td>
+                        <td className="py-2 px-3 font-mono text-slate-600">{row.bill_date}</td>
+                        <td className="py-2 px-3 font-semibold text-slate-800">{row.buyer_name}</td>
+                        <td className="py-2 px-3">
+                          {!row.is_new_party ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              <Check size={11} />
+                              <span>{row.matched_buyer_name || 'Matched Contact'}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              <UserPlus size={11} />
+                              <span>New Company (Auto-Add)</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-slate-500">{row.city || '-'}</td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                          ₹ {Number(row.pending_amount || row.billed_amount || 0).toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: Record Payment / Balance Update                     */}
+      {/* ======================================================== */}
+      {(selectedPartyForPayment || selectedRecordForPayment) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden">
+            <div className="bg-[#0B3B24] text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CreditCard size={18} />
+                <h3 className="font-bold text-sm">
+                  પેમેન્ટ જમા કરો (Record Payment / Credit)
+                </h3>
               </div>
               <button
-                onClick={() => setSelectedRecordForPayment(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                onClick={() => {
+                  setSelectedPartyForPayment(null);
+                  setSelectedRecordForPayment(null);
+                }}
+                className="text-white/80 hover:text-white cursor-pointer"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleRecordPayment} className="p-6 space-y-4">
+            <form onSubmit={handleSubmitPayment} className="p-5 space-y-4">
+              {/* Highlight Target & Balance */}
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+                <p className="text-xs text-amber-800 font-semibold uppercase">પાર્ટીનું નામ (Company)</p>
+                <p className="text-base font-bold text-slate-900">
+                  {selectedPartyForPayment?.company_name || selectedRecordForPayment?.buyer_name}
+                </p>
+                <div className="mt-2 flex items-center justify-between text-xs pt-2 border-t border-amber-200/60">
+                  <span className="text-amber-800 font-semibold">ચાલુ બાકી રકમ (Current Balance):</span>
+                  <span className="font-mono font-black text-rose-800 text-sm">
+                    ₹{' '}
+                    {Number(
+                      selectedPartyForPayment?.total_balance ?? selectedRecordForPayment?.balance_amount ?? 0
+                    ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Amount to pay */}
               <div>
-                <p className="text-xs text-slate-500">હાલની બાકી રકમ (Balance Due)</p>
-                <p className="text-2xl font-bold text-amber-600 mt-0.5">
-                  ₹{Number(selectedRecordForPayment.balance_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  જમા રકમ (Amount Paid ₹) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={paymentForm.amount}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                  placeholder="e.g. 300000"
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0B3B24]/20"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  આ રકમ જમા કરવાથી બાકી રકમ આપમેળે ઘટી જશે.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* Payment Mode & Date */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    જમા રકમ (Amount ₹) *
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    પેમેન્ટ મોડ (Mode)
                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={paymentForm.amount}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-bold text-emerald-800 focus:outline-none focus:border-emerald-500"
-                    required
-                  />
+                  <select
+                    value={paymentForm.payment_mode}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_mode: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800"
+                  >
+                    <option value="RTGS">RTGS / Bank</option>
+                    <option value="NEFT">NEFT</option>
+                    <option value="CHEQUE">Cheque</option>
+                    <option value="UPI">UPI / Net Banking</option>
+                    <option value="CASH">Cash</option>
+                    <option value="ADJUSTMENT">Rate Diff / Claim</option>
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    તારીખ (Date) *
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    તારીખ (Date)
                   </label>
                   <input
                     type="date"
                     value={paymentForm.payment_date}
                     onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-500"
-                    required
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-800"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    પેમેન્ટ મોડ (Payment Mode)
-                  </label>
-                  <select
-                    value={paymentForm.payment_mode}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_mode: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                  >
-                    <option value="RTGS">RTGS</option>
-                    <option value="NEFT">NEFT</option>
-                    <option value="CHEQUE">Cheque</option>
-                    <option value="UPI">UPI</option>
-                    <option value="CASH">Cash</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    UTR / Cheque No.
-                  </label>
-                  <input
-                    type="text"
-                    value={paymentForm.reference_number}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, reference_number: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                    placeholder="UTR-XXXX-YYYY"
-                  />
-                </div>
-              </div>
-
+              {/* Reference / UTR Number */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  ઉઘરાણી કરનાર સ્ટાફ (Collected By)
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  UTR / ચેક નંબર (Reference Number)
                 </label>
                 <input
                   type="text"
-                  value={paymentForm.collected_by}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, collected_by: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                  placeholder="e.g. Rajesh Patel"
+                  value={paymentForm.reference_number}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, reference_number: e.target.value })}
+                  placeholder="e.g. UTR12345678 or Chq# 8765"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3">
+              {/* Deductions (Claims / Shortage) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    કપાત / વળતર (Deduction ₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={paymentForm.deductions_amount}
+                    onChange={(e) =>
+                      setPaymentForm({ ...paymentForm, deductions_amount: e.target.value })
+                    }
+                    placeholder="e.g. 5000"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    કપાતનું કારણ (Reason)
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentForm.deduction_reason}
+                    onChange={(e) =>
+                      setPaymentForm({ ...paymentForm, deduction_reason: e.target.value })
+                    }
+                    placeholder="દા.ત. વજન ઘટ, ભાવ ફેર"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setSelectedRecordForPayment(null)}
-                  className="px-4 py-2 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-50 cursor-pointer"
+                  onClick={() => {
+                    setSelectedPartyForPayment(null);
+                    setSelectedRecordForPayment(null);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 cursor-pointer"
                 >
-                  Cancel
+                  રદ કરો (Cancel)
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-xs shadow-emerald-700/20"
+                  className="px-5 py-2 text-xs font-bold text-white bg-[#0B3B24] rounded-xl hover:bg-[#124b30] shadow-sm cursor-pointer flex items-center gap-1.5"
                 >
-                  Record Payment
+                  <Check size={14} />
+                  <span>જમા કરો (Update Balance)</span>
                 </button>
               </div>
             </form>
@@ -821,179 +1262,217 @@ export const RecoveriesPage: React.FC = () => {
         </div>
       )}
 
-      {/* Manual Add Bill Modal */}
-      {isManualAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden my-6">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-amber-50/50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
-                  <PlusCircle size={22} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    મેન્યુઅલ બિલ ઉમેરો (Manual Bill Entry)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    બાયર પાર્ટી અને સેલર મિલની નવી ઉધારી સીધી લેજરમાં એડ કરો
-                  </p>
-                </div>
+      {/* ======================================================== */}
+      {/* MODAL: Call Contacts Picker Dialog                        */}
+      {/* ======================================================== */}
+      {selectedPartyForCall && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-sm w-full border border-slate-200 shadow-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-sky-800">
+                <Phone size={18} />
+                <h3 className="font-bold text-sm">કોલ કરો (Make a Call)</h3>
               </div>
               <button
-                onClick={() => setIsManualAddOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                onClick={() => setSelectedPartyForCall(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveManualBill} className="p-6 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    બાયર પાર્ટી (Buyer Party) *
-                  </label>
-                  <select
-                    value={manualForm.buyer_id}
-                    onChange={(e) => handleBuyerSelect(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                  >
-                    <option value="">-- પસંદ કરો અથવા ટાઈપ કરો --</option>
-                    {buyers?.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.company_name}
-                      </option>
-                    ))}
-                  </select>
-                  {!manualForm.buyer_id && (
-                    <input
-                      type="text"
-                      placeholder="અથવા નવું નામ લખો..."
-                      value={manualForm.buyer_name}
-                      onChange={(e) => setManualForm({ ...manualForm, buyer_name: e.target.value })}
-                      className="w-full px-3 py-1.5 mt-1.5 border border-slate-200 rounded-lg text-xs"
-                      required
-                    />
-                  )}
-                </div>
+            <div>
+              <p className="font-bold text-slate-900 text-sm">{selectedPartyForCall.company_name}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{selectedPartyForCall.city}</p>
+              <p className="text-xs text-rose-800 font-bold mt-1">
+                બાકી રકમ: ₹ {selectedPartyForCall.total_balance.toLocaleString('en-IN')}
+              </p>
+            </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    સેલર મિલ (Seller Mill) *
-                  </label>
-                  <select
-                    value={manualForm.seller_id}
-                    onChange={(e) => handleSellerSelect(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                    required
-                  >
-                    <option value="">-- સેલર પસંદ કરો --</option>
-                    {sellers?.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.company_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <div className="space-y-2 pt-2">
+              <p className="text-[11px] font-bold text-slate-600 uppercase">ઉપલબ્ધ ફોન નંબર:</p>
+              {selectedPartyForCall.phone ? (
+                <a
+                  href={`tel:${selectedPartyForCall.phone.replace(/[^\d+]/g, '')}`}
+                  className="w-full px-4 py-2.5 bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-900 rounded-xl font-bold text-xs flex items-center justify-between transition-colors"
+                >
+                  <span>📞 {selectedPartyForCall.phone}</span>
+                  <span className="text-[10px] bg-sky-200 px-2 py-0.5 rounded-full">Call Now</span>
+                </a>
+              ) : (
+                <p className="text-xs text-slate-400 italic">કોઈ ફોન નંબર સેવ નથી.</p>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setSelectedPartyForCall(null)}
+                className="px-4 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 cursor-pointer"
+              >
+                બંધ કરો (Close)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: Manual Add Recovery Bill                           */}
+      {/* ======================================================== */}
+      {isManualAddOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden">
+            <div className="bg-[#0B3B24] text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Receipt size={18} />
+                <h3 className="font-bold text-sm">નવું ઉઘરાણી બિલ ઉમેરો (Add Recovery Bill)</h3>
+              </div>
+              <button onClick={() => setIsManualAddOpen(false)} className="text-white/80 hover:text-white cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveManualBill} className="p-5 space-y-4">
+              {/* Buyer / Company Contact Select */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  બાયર વેપારી (Buyer Company) <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={manualForm.buyer_contact_id}
+                  onChange={(e) => {
+                    const c = buyerContacts.find((b) => b.id.toString() === e.target.value);
+                    setManualForm({
+                      ...manualForm,
+                      buyer_contact_id: e.target.value,
+                      buyer_name: c ? c.name : '',
+                      buyer_city: c ? c.city || '' : '',
+                      buyer_phone: c ? c.mobile_1 || c.phone_office_1 || '' : '',
+                      due_days: (c as any)?.credit_days || 15,
+                    });
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800"
+                  required
+                >
+                  <option value="">-- બાયર વેપારી પસંદ કરો --</option>
+                  {buyerContacts.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      [{b.code}] {b.name} {b.city ? `(${b.city})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Mill / Supplier Select */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  મિલ / સપ્લાયર (Mill Partner)
+                </label>
+                <select
+                  value={manualForm.company_contact_id}
+                  onChange={(e) => {
+                    const m = millContacts.find((s) => s.id.toString() === e.target.value);
+                    setManualForm({
+                      ...manualForm,
+                      company_contact_id: e.target.value,
+                      seller_name: m ? m.name : '',
+                    });
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
+                >
+                  <option value="">-- મિલ પસંદ કરો --</option>
+                  {millContacts.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} {m.city ? `(${m.city})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Bill Number & Date */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    બિલ નંબર (Bill #) *
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    બિલ નંબર <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={manualForm.bill_number}
                     onChange={(e) => setManualForm({ ...manualForm, bill_number: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-mono"
-                    placeholder="e.g. 1042"
+                    placeholder="e.g. 1045"
                     required
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    બિલ તારીખ (Date) *
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    બિલ તારીખ
                   </label>
                   <input
                     type="date"
                     value={manualForm.bill_date}
                     onChange={(e) => setManualForm({ ...manualForm, bill_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    ક્રેડિટ દિવસો (Due Days)
-                  </label>
-                  <input
-                    type="number"
-                    value={manualForm.due_days}
-                    onChange={(e) => setManualForm({ ...manualForm, due_days: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Amount & Credit Days */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    બિલ રકમ (Billed Amount ₹) *
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    બિલ રકમ (₹) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="number"
                     step="0.01"
                     value={manualForm.billed_amount}
                     onChange={(e) => setManualForm({ ...manualForm, billed_amount: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-bold text-amber-800"
-                    placeholder="e.g. 45000"
+                    placeholder="e.g. 500000"
                     required
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    પાર્ટી શહેર / સ્ટેશન
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    ક્રેડિટ મુદત (Due Days)
                   </label>
                   <input
-                    type="text"
-                    value={manualForm.buyer_city}
-                    onChange={(e) => setManualForm({ ...manualForm, buyer_city: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                    placeholder="e.g. Anand"
+                    type="number"
+                    value={manualForm.due_days}
+                    onChange={(e) => setManualForm({ ...manualForm, due_days: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold"
                   />
                 </div>
               </div>
 
+              {/* Notes */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  વિગત / માલ (Remarks / Item)
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  વિગત / નોંધ (Item Notes)
                 </label>
                 <input
                   type="text"
                   value={manualForm.notes}
                   onChange={(e) => setManualForm({ ...manualForm, notes: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
-                  placeholder="e.g. Cotton Cake 300 Bags"
+                  placeholder="દા.ત. 500 ગુણી કપાસ ખોળ"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsManualAddOpen(false)}
-                  className="px-4 py-2 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-50 cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 cursor-pointer"
                 >
-                  Cancel
+                  રદ કરો (Cancel)
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-xs shadow-amber-600/20"
+                  className="px-5 py-2 text-xs font-bold text-white bg-[#0B3B24] rounded-xl hover:bg-[#124b30] shadow-sm cursor-pointer"
                 >
-                  Save Bill to Ledger
+                  બિલ સાચવો (Save Bill)
                 </button>
               </div>
             </form>

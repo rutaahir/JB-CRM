@@ -18,6 +18,7 @@ import {
   PhoneCall,
   Target,
   Flame,
+  IndianRupee,
 } from 'lucide-react';
 import { apiClient } from '@/api/client';
 import { leadsApi, LeadStats } from '@/api/leads';
@@ -163,6 +164,13 @@ export const DashboardPage: React.FC = () => {
             >
               <Package size={14} className="text-amber-300" />
               <span>Product Master</span>
+            </button>
+            <button
+              onClick={() => navigate('/recoveries')}
+              className="px-3.5 py-2 bg-[#0c4026] text-white border border-[#0d3f25] hover:bg-[#104e2d] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <IndianRupee size={14} className="text-amber-400" />
+              <span>Payment Recovery</span>
             </button>
             <button
               onClick={() => navigate('/deals?mode=targets')}

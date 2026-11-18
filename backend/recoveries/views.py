@@ -13,11 +13,103 @@ from buyers.models import Buyer
 
 
 class RecoveryRecordViewSet(viewsets.ModelViewSet):
-    queryset = RecoveryRecord.objects.all()
+    queryset = RecoveryRecord.objects.all().select_related('buyer_contact', 'company_contact', 'deal')
     serializer_class = RecoveryRecordSerializer
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['status', 'seller', 'buyer']
-    search_fields = ['bill_number', 'buyer_name', 'seller_name', 'buyer_city']
+    filterset_fields = ['status', 'seller', 'buyer', 'buyer_contact', 'company_contact']
+    search_fields = ['bill_number', 'buyer_name', 'seller_name', 'buyer_city', 'buyer_phone', 'buyer_contact__name', 'company_contact__name']
+
+    @action(detail=False, methods=['get'])
+    def party_summary(self, request):
+        """
+        Returns company-wise cumulative balance summary:
+        Total Billed, Total Paid, Net Remaining Outstanding, Pending Bills Count,
+        Oldest Overdue Days, Contact info, and list of unpaid bills.
+        """
+        qs = self.get_queryset()
+        
+        parties = {}
+        for rec in qs:
+            key = rec.buyer_contact_id or (f"b_{rec.buyer_id}" if rec.buyer_id else rec.buyer_name.strip().lower())
+            if key not in parties:
+                contact = rec.buyer_contact
+                buyer_model = rec.buyer
+                name = contact.name if contact else (buyer_model.company_name if buyer_model else rec.buyer_name)
+                city = contact.city if contact else (buyer_model.address.split(',')[0] if buyer_model else rec.buyer_city)
+                phone = (contact.mobile_1 or contact.phone_office_1 or contact.mobile_2) if contact else (buyer_model.whatsapp or buyer_model.phone if buyer_model else rec.buyer_phone)
+                
+                parties[key] = {
+                    'party_key': str(key),
+                    'buyer_contact_id': rec.buyer_contact_id,
+                    'buyer_id': rec.buyer_id,
+                    'company_name': name,
+                    'city': city or '',
+                    'phone': phone or '',
+                    'total_billed': Decimal('0.00'),
+                    'total_balance': Decimal('0.00'),
+                    'total_paid': Decimal('0.00'),
+                    'pending_bills_count': 0,
+                    'total_bills_count': 0,
+                    'oldest_bill_date': None,
+                    'max_overdue_days': 0,
+                    'last_reminder_sent_at': None,
+                    'reminder_count': 0,
+                    'bills': []
+                }
+            
+            p = parties[key]
+            p['total_bills_count'] += 1
+            p['total_billed'] += rec.billed_amount
+            p['total_balance'] += rec.balance_amount
+            p['total_paid'] += (rec.billed_amount - rec.balance_amount)
+            if rec.balance_amount > Decimal('0.00'):
+                p['pending_bills_count'] += 1
+                if rec.overdue_days > p['max_overdue_days']:
+                    p['max_overdue_days'] = rec.overdue_days
+                if not p['oldest_bill_date'] or (rec.bill_date and rec.bill_date < p['oldest_bill_date']):
+                    p['oldest_bill_date'] = rec.bill_date
+
+            if rec.last_reminder_sent_at:
+                if not p['last_reminder_sent_at'] or rec.last_reminder_sent_at > p['last_reminder_sent_at']:
+                    p['last_reminder_sent_at'] = rec.last_reminder_sent_at
+            p['reminder_count'] += (rec.reminder_count or 0)
+
+            p['bills'].append({
+                'id': rec.id,
+                'bill_number': rec.bill_number,
+                'bill_date': rec.bill_date.strftime('%Y-%m-%d') if rec.bill_date else '',
+                'seller_name': rec.seller_name,
+                'billed_amount': float(rec.billed_amount),
+                'balance_amount': float(rec.balance_amount),
+                'paid_amount': float(rec.billed_amount - rec.balance_amount),
+                'status': rec.status,
+                'overdue_days': rec.overdue_days,
+                'is_overdue': rec.is_overdue,
+            })
+
+        result = []
+        for p in parties.values():
+            result.append({
+                'party_key': p['party_key'],
+                'buyer_contact_id': p['buyer_contact_id'],
+                'buyer_id': p['buyer_id'],
+                'company_name': p['company_name'],
+                'city': p['city'],
+                'phone': p['phone'],
+                'total_billed': float(p['total_billed']),
+                'total_paid': float(p['total_paid']),
+                'total_balance': float(p['total_balance']),
+                'pending_bills_count': p['pending_bills_count'],
+                'total_bills_count': p['total_bills_count'],
+                'oldest_bill_date': p['oldest_bill_date'].strftime('%Y-%m-%d') if p['oldest_bill_date'] else None,
+                'max_overdue_days': p['max_overdue_days'],
+                'last_reminder_sent_at': p['last_reminder_sent_at'].isoformat() if p['last_reminder_sent_at'] else None,
+                'reminder_count': p['reminder_count'],
+                'bills': p['bills'],
+            })
+
+        result.sort(key=lambda x: x['total_balance'], reverse=True)
+        return Response(result)
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
@@ -123,7 +215,9 @@ class RecoveryRecordViewSet(viewsets.ModelViewSet):
         Allocates a single lump-sum payment (e.g. 1 RTGS of ₹1,50,000) across multiple
         unpaid bills for a buyer, ordered by oldest bill date first.
         """
+        buyer_contact_id = request.data.get('buyer_contact_id')
         buyer_id = request.data.get('buyer_id')
+        buyer_name = request.data.get('buyer_name', '').strip()
         total_amount = Decimal(str(request.data.get('amount', 0) or 0))
         total_deduction = Decimal(str(request.data.get('deductions_amount', 0) or 0))
         deduction_reason = request.data.get('deduction_reason', '')
@@ -137,14 +231,20 @@ class RecoveryRecordViewSet(viewsets.ModelViewSet):
         if total_amount <= 0 and total_deduction <= 0:
             return Response({'error': 'Total payment or deduction must be greater than zero'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not buyer_id and not bill_ids:
-            return Response({'error': 'Please provide buyer_id or a list of bill_ids'}, status=status.HTTP_400_BAD_REQUEST)
+        if not buyer_contact_id and not buyer_id and not buyer_name and not bill_ids:
+            return Response({'error': 'Please provide buyer_contact_id, buyer_name, or bill_ids'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Select target bills
         if bill_ids:
             bills = list(RecoveryRecord.objects.filter(id__in=bill_ids, balance_amount__gt=Decimal('0.00')).order_by('bill_date', 'id'))
-        else:
+        elif buyer_contact_id:
+            bills = list(RecoveryRecord.objects.filter(buyer_contact_id=buyer_contact_id, balance_amount__gt=Decimal('0.00')).order_by('bill_date', 'id'))
+        elif buyer_id:
             bills = list(RecoveryRecord.objects.filter(buyer_id=buyer_id, balance_amount__gt=Decimal('0.00')).order_by('bill_date', 'id'))
+        elif buyer_name:
+            bills = list(RecoveryRecord.objects.filter(buyer_name__iexact=buyer_name, balance_amount__gt=Decimal('0.00')).order_by('bill_date', 'id'))
+        else:
+            bills = []
 
         if not bills:
             return Response({'error': 'No outstanding bills found to allocate payment against.'}, status=status.HTTP_400_BAD_REQUEST)

@@ -13,6 +13,7 @@ import {
   Target,
   ShieldCheck,
   Package,
+  IndianRupee,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { useAuth } from '@/context/AuthContext';
@@ -212,6 +213,28 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
                     </NavLink>
                   );
                 })()}
+
+                {/* 5.5. Payment Recovery (ઉઘરાણી / Payment Recovery) */}
+                <NavLink
+                  to="/recoveries"
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-[#10482b] text-white font-semibold'
+                        : 'text-slate-300 hover:text-white hover:bg-[#0b3820]'
+                    )
+                  }
+                >
+                  <div className="flex items-center gap-3">
+                    <IndianRupee size={18} className="text-amber-400" />
+                    <span>Payment Recovery</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-semibold">
+                    Recovery
+                  </span>
+                </NavLink>
 
                 {/* 6. Leads & Follow-up */}
                 <NavLink

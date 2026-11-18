@@ -24,12 +24,47 @@ export interface RecoveryStatsResponse {
   };
 }
 
+export interface PartyBalanceSummary {
+  party_key: string;
+  buyer_contact_id: number | null;
+  buyer_id: number | null;
+  company_name: string;
+  city: string;
+  phone: string;
+  total_billed: number;
+  total_paid: number;
+  total_balance: number;
+  pending_bills_count: number;
+  total_bills_count: number;
+  oldest_bill_date: string | null;
+  max_overdue_days: number;
+  last_reminder_sent_at: string | null;
+  reminder_count: number;
+  bills: Array<{
+    id: number;
+    bill_number: string;
+    bill_date: string;
+    seller_name: string;
+    billed_amount: number;
+    balance_amount: number;
+    paid_amount: number;
+    status: string;
+    overdue_days: number;
+    is_overdue: boolean;
+  }>;
+}
+
 export const recoveriesApi = {
   getRecoveries: async (params?: Record<string, any>) => {
     const response = await apiClient.get<PaginatedResponse<RecoveryRecord> | RecoveryRecord[]>('/recoveries/', { params });
     if (Array.isArray(response.data)) {
       return { count: response.data.length, results: response.data };
     }
+    return response.data;
+  },
+
+  getPartySummary: async () => {
+    const response = await apiClient.get<PartyBalanceSummary[]>('/recoveries/party_summary/');
     return response.data;
   },
 
@@ -60,6 +95,8 @@ export const recoveriesApi = {
 
   allocatePayment: async (data: {
     buyer_id?: number | string;
+    buyer_contact_id?: number | string;
+    buyer_name?: string;
     bill_ids?: number[];
     amount: number;
     deductions_amount?: number;
@@ -102,6 +139,18 @@ export const recoveriesApi = {
 
   updateRecovery: async (id: number, data: Partial<RecoveryRecord>) => {
     const response = await apiClient.patch<RecoveryRecord>(`/recoveries/${id}/`, data);
+    return response.data;
+  },
+
+  uploadStatement: async (formData: FormData) => {
+    const response = await apiClient.post<any>('/statements/upload/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  saveVerifiedRecords: async (statementId: number, data: { records: any[]; target?: string; seller_id?: any }) => {
+    const response = await apiClient.post<any>(`/statements/save-verified/${statementId}/`, data);
     return response.data;
   },
 };
